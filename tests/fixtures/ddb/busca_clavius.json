@@ -1,0 +1,32 @@
+{
+  "response": {
+    "numFound": 3,
+    "start": 0,
+    "docs": [
+      {
+        "id": "G5ZN3SJPJ4MQKERNGUAK32IWF52R7PIH",
+        "title": ["Algebra Christophori Clavii"],
+        "creator": ["Christophorus Clavius"],
+        "provider": ["Max-Planck-Institut für Wissenschaftsgeschichte"],
+        "time": ["1608"],
+        "language": ["Latin"]
+      },
+      {
+        "id": "BLL72YWH52UM4JEFZYTHRBK5I2OWLMOT",
+        "title": ["Christophori Clavii Bambergensis ... Geometria Practica"],
+        "creator": ["Christophorus Clavius"],
+        "provider": ["SLUB Dresden"],
+        "time": ["1604"],
+        "language": ["Latin"]
+      },
+      {
+        "id": "PLACEHOLDER0000000000000000000001",
+        "title": ["Christophori Clavii Epitome Arithmeticae Practicae"],
+        "creator": ["Christophorus Clavius"],
+        "provider": ["Bayerische Staatsbibliothek"],
+        "time": ["1593"],
+        "language": ["Latin"]
+      }
+    ]
+  }
+}
