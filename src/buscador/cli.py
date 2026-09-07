@@ -5,15 +5,18 @@ import argparse
 import datetime
 import re
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
+from buscador.adapters.ddb import DdbAdapter, DdbApiError
 from buscador.adapters.phpbb import PhpbbAdapter
+from buscador.core.config import ConfigError
 from buscador.core.planilha import gerar_planilha
 from buscador.core.traducao import traduzir
 from buscador.core.verificacao_links import analisar, classificar_tipo
 
 ADAPTERS_POR_DOMINIO = {
     "grand-sud-medieval.fr": "phpbb",
+    "deutsche-digitale-bibliothek.de": "ddb",
 }
 
 SAIDAS = Path(__file__).resolve().parent.parent.parent / "saidas"
@@ -32,7 +35,19 @@ def escolher_adapter(url, forcado=None):
 def construir_adapter(nome_adapter, url_ou_consulta):
     if nome_adapter == "phpbb":
         return PhpbbAdapter(url_ou_consulta)
+    if nome_adapter == "ddb":
+        return DdbAdapter(_extrair_consulta_ddb(url_ou_consulta))
     raise ValueError(f"Adaptador desconhecido: {nome_adapter}")
+
+
+def _extrair_consulta_ddb(valor):
+    """Aceita tanto uma consulta direta ("Christophori Clavii") quanto uma
+    URL de busca da DDB copiada do navegador (usa o parametro 'query' dela)."""
+    if valor.startswith("http://") or valor.startswith("https://"):
+        parametros = parse_qs(urlparse(valor).query)
+        if parametros.get("query"):
+            return parametros["query"][0]
+    return valor
 
 
 def enriquecer_item(item):
@@ -53,14 +68,17 @@ def _slug_do_dominio(url):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Mapeia um site para uma planilha (Fase 1).")
     parser.add_argument("url", help="URL de entrada (topico ou busca do site)")
-    parser.add_argument("--adapter", choices=["phpbb"], help="Força um adaptador específico")
+    parser.add_argument("--adapter", choices=["phpbb", "ddb"], help="Força um adaptador específico")
     parser.add_argument("--saida", help="Caminho do .xlsx de saída (padrão: saidas/<site>_<data>.xlsx)")
     args = parser.parse_args(argv)
 
-    nome_adapter = escolher_adapter(args.url, args.adapter)
-    adapter = construir_adapter(nome_adapter, args.url)
-
-    itens = [enriquecer_item(item) for item in adapter.iter_itens()]
+    try:
+        nome_adapter = escolher_adapter(args.url, args.adapter)
+        adapter = construir_adapter(nome_adapter, args.url)
+        itens = [enriquecer_item(item) for item in adapter.iter_itens()]
+    except (ConfigError, DdbApiError, ValueError) as erro:
+        print(f"Não deu para continuar: {erro}")
+        return 1
 
     if args.saida:
         caminho_saida = Path(args.saida)

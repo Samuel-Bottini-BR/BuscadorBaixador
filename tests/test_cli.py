@@ -4,6 +4,7 @@ from openpyxl import load_workbook
 
 from buscador import cli
 from buscador.adapters.base import Item
+from buscador.adapters.ddb import DdbAdapter
 
 
 class AdapterFake:
@@ -22,6 +23,20 @@ def test_escolher_adapter_por_dominio():
     assert cli.escolher_adapter(url) == "phpbb"
 
 
+def test_escolher_adapter_ddb_por_dominio():
+    url = "https://www.deutsche-digitale-bibliothek.de/searchresults?query=Christophori+Clavii"
+    assert cli.escolher_adapter(url) == "ddb"
+
+
+def test_extrair_consulta_ddb_de_url_de_busca():
+    url = "https://www.deutsche-digitale-bibliothek.de/searchresults?query=Christophori+Clavii"
+    assert cli._extrair_consulta_ddb(url) == "Christophori Clavii"
+
+
+def test_extrair_consulta_ddb_texto_direto():
+    assert cli._extrair_consulta_ddb("Christophori Clavii") == "Christophori Clavii"
+
+
 def test_escolher_adapter_forcado_tem_prioridade():
     assert cli.escolher_adapter("https://qualquer-site.com", forcado="ddb") == "ddb"
 
@@ -29,6 +44,26 @@ def test_escolher_adapter_forcado_tem_prioridade():
 def test_escolher_adapter_domino_desconhecido_levanta_erro():
     with pytest.raises(ValueError):
         cli.escolher_adapter("https://site-nao-cadastrado.com")
+
+
+def test_main_sem_chave_da_ddb_mostra_mensagem_amigavel(monkeypatch, capsys):
+    monkeypatch.delenv("DDB_API_KEY", raising=False)
+    codigo = cli.main(["Christophori Clavii", "--adapter", "ddb"])
+    assert codigo == 1
+    assert "Cadastre-se de graça" in capsys.readouterr().out
+
+
+def test_main_dominio_desconhecido_mostra_mensagem_amigavel(capsys):
+    codigo = cli.main(["https://site-nao-cadastrado.com"])
+    assert codigo == 1
+    assert "Não deu para continuar" in capsys.readouterr().out
+
+
+def test_construir_adapter_ddb(monkeypatch):
+    monkeypatch.setenv("DDB_API_KEY", "chave-teste")
+    adapter = cli.construir_adapter("ddb", "Christophori Clavii")
+    assert isinstance(adapter, DdbAdapter)
+    assert adapter.consulta == "Christophori Clavii"
 
 
 def test_main_ponta_a_ponta_com_adapter_fake(tmp_path, monkeypatch):
