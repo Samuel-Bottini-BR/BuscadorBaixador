@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa Mental — Buscador e Baixador</title>
+<style>
+  :root{
+    --bg:#f4f6fa; --ink:#1e2430; --muted:#606b7b; --line:#c3ccd8; --card:#fff;
+    --root:#1F3864;
+    --azul:#2b6cb0; --verde:#1a7f45; --laranja:#c26a12; --roxo:#6b3fa0; --rosa:#b83280; --cinza:#5b6675;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#10141b; --ink:#e8ecf2; --muted:#98a3b2; --line:#33404f; --card:#1a2029;
+    --root:#9cbcea; --azul:#7fb0e6; --verde:#7fd0a0; --laranja:#e2a862; --roxo:#c3a7ea; --rosa:#e69bc4; --cinza:#aab4c2;
+  }}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+  .head{padding:20px 22px 6px;max-width:1240px;margin:0 auto}
+  .head h1{margin:0;font-size:22px}
+  .head p{margin:4px 0 0;color:var(--muted);font-size:13px}
+  .scroll{overflow:auto;padding:10px 0 40px}
+  .stage{position:relative;width:1240px;height:900px;margin:0 auto}
+  svg.links{position:absolute;inset:0;width:100%;height:100%;z-index:0}
+  svg.links path{fill:none;stroke:var(--line);stroke-width:2.5}
+  .node{position:absolute;z-index:1;width:262px;background:var(--card);
+    border:1px solid var(--line);border-left-width:5px;border-radius:12px;
+    padding:9px 12px;box-shadow:0 2px 6px rgba(0,0,0,.07)}
+  .node .t{font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .node .s{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.35}
+  .badge{width:22px;height:22px;border-radius:50%;color:#fff;font-size:12px;font-weight:800;
+    display:inline-grid;place-items:center;flex:0 0 auto}
+  .center{position:absolute;z-index:2;left:495px;top:398px;width:250px;height:104px;
+    background:var(--root);color:#fff;border-radius:18px;display:grid;place-items:center;text-align:center;
+    box-shadow:0 6px 18px rgba(0,0,0,.22);padding:10px}
+  .center b{font-size:19px;display:block}
+  .center span{font-size:12px;opacity:.9}
+  .tagline{display:inline-block;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;margin-left:6px}
+  .go{background:var(--verde);color:#fff}
+  .ex{background:var(--cinza);color:#fff}
+  .lbl{position:absolute;z-index:1;font-size:11px;font-weight:800;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted)}
+  /* cores por ramo */
+  .b1{border-left-color:var(--cinza)} .b2{border-left-color:var(--cinza)}
+  .b3{border-left-color:var(--cinza)} .b4{border-left-color:var(--cinza)}
+  .f1{border-left-color:var(--azul)} .f2{border-left-color:var(--verde)}
+  .f3{border-left-color:var(--laranja)} .f4{border-left-color:var(--roxo)}
+  .f5{border-left-color:var(--rosa)} .fx{border-left-color:var(--cinza);border-left-style:dashed}
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>Buscador e Baixador — mapa mental</h1>
+    <p>À esquerda, as bases que valem para tudo. À direita, as fases na ordem de construção.</p>
+  </div>
+  <div class="scroll">
+  <div class="stage" id="stage">
+    <svg class="links" id="svg" viewBox="0 0 1240 900" preserveAspectRatio="none"></svg>
+
+    <div class="lbl" style="left:30px;top:14px">Bases (atravessam tudo)</div>
+    <div class="lbl" style="left:960px;top:14px">Fases (em ordem)</div>
+
+    <div class="center">
+      <div><b>Buscador e Baixador</b><span>app local · você + Kaique</span></div>
+    </div>
+
+    <!-- BASES (esquerda) -->
+    <div class="node b1" data-side="L" style="left:30px;top:70px">
+      <div class="t">🖥️ Dashboard</div>
+      <div class="s">simples, bonito e à prova de leigo (frontend por último)</div>
+    </div>
+    <div class="node b2" data-side="L" style="left:30px;top:250px">
+      <div class="t">🔑 Sites + login</div>
+      <div class="s">adiciona um site e loga ali quando ele pedir (sem senha no código)</div>
+    </div>
+    <div class="node b3" data-side="L" style="left:30px;top:560px">
+      <div class="t">🤖 Botão Claude Pro</div>
+      <div class="s">IA só quando você aperta o botão (sem IA local)</div>
+    </div>
+    <div class="node b4" data-side="L" style="left:30px;top:740px">
+      <div class="t">⚠️ Aviso "não confiável"</div>
+      <div class="s">toda categorização automática vem marcada como palpite</div>
+    </div>
+
+    <!-- FASES (direita) -->
+    <div class="node f1" data-side="R" style="left:948px;top:40px">
+      <div class="t"><span class="badge" style="background:var(--azul)">1</span>Mapear site → planilha<span class="tagline go">COMEÇAR</span></div>
+      <div class="s">links + PDFs · 🔵 login 🔴 quebrado 🟢 baixa direto · título traduzido PT + explicação · fórum: "Claude lê a conversa"</div>
+    </div>
+    <div class="node f2" data-side="R" style="left:948px;top:210px">
+      <div class="t"><span class="badge" style="background:var(--verde)">2</span>Baixar</div>
+      <div class="s">1 ou vários (lote) · usa o login quando o site pede · guarda o sha256</div>
+    </div>
+    <div class="node f3" data-side="R" style="left:948px;top:370px">
+      <div class="t"><span class="badge" style="background:var(--laranja)">3</span>Baixar + organizar</div>
+      <div class="s">separa em pastas pela categoria que o próprio site já deu (sem OCR ainda)</div>
+    </div>
+    <div class="node f4" data-side="R" style="left:948px;top:520px">
+      <div class="t"><span class="badge" style="background:var(--roxo)">4</span>Catalogar fundo</div>
+      <div class="s">OCR grátis (OCRmyPDF/Tesseract) · confere em catálogos on-line · botão Claude · autor/título/tema</div>
+    </div>
+    <div class="node f5" data-side="R" style="left:948px;top:690px">
+      <div class="t"><span class="badge" style="background:var(--rosa)">5</span>Buscar por nome</div>
+      <div class="s">digita o livro → procura na sua base de sites → devolve links p/ conferir</div>
+    </div>
+    <div class="node fx" data-side="R" style="left:948px;top:830px">
+      <div class="t"><span class="badge" style="background:var(--cinza)">+</span>Telegram<span class="tagline ex">EXTRA</span></div>
+      <div class="s">buscar/baixar em grupos · módulo separado, por último</div>
+    </div>
+  </div>
+  </div>
+
+<script>
+(function(){
+  var stage=document.getElementById('stage'), svg=document.getElementById('svg');
+  var cx=620, cyTop=420, cyBot=482; // pontos de saída no nó central (bordas L/R aprox.)
+  var cLeftX=498, cRightX=742, cMidY=450;
+  function edge(node){
+    var r=node.getBoundingClientRect(), sr=stage.getBoundingClientRect();
+    var x=node.offsetLeft, y=node.offsetTop, w=node.offsetWidth, h=node.offsetHeight;
+    var side=node.getAttribute('data-side');
+    if(side==='L') return {x:x+w, y:y+h/2, from:{x:cLeftX,y:cMidY}};
+    return {x:x, y:y+h/2, from:{x:cRightX,y:cMidY}};
+  }
+  document.querySelectorAll('.node').forEach(function(n){
+    var e=edge(n);
+    var x1=e.from.x, y1=e.from.y, x2=e.x, y2=e.y;
+    var mx=(x1+x2)/2;
+    var d='M'+x1+' '+y1+' C '+mx+' '+y1+', '+mx+' '+y2+', '+x2+' '+y2;
+    var p=document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d',d);
+    svg.appendChild(p);
+  });
+})();
+</script>
+</body>
+</html>

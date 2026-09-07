@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa Mental — Buscador e Baixador</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1f2430; --muted:#5b6472; --line:#d7dce3;
+    --root:#1F3864; --azul:#2b6cb0; --azul-bg:#e7f0fb;
+    --verde:#1a7f45; --verde-bg:#e3f4ea; --vermelho:#b42318; --vermelho-bg:#fde7e5;
+    --roxo:#6b3fa0; --roxo-bg:#efe7fa; --laranja:#b45309; --laranja-bg:#fbeede;
+    --cinza:#475569; --cinza-bg:#eef1f5;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12151b; --card:#1b2029; --ink:#e8ecf2; --muted:#9aa4b2; --line:#2a3140;
+      --root:#8fb3e6; --azul:#7fb0e6; --azul-bg:#17293c; --verde:#7fd0a0; --verde-bg:#12301f;
+      --vermelho:#f2a29a; --vermelho-bg:#3a1a17; --roxo:#c3a7ea; --roxo-bg:#251838;
+      --laranja:#e8b877; --laranja-bg:#33240f; --cinza:#aab4c2; --cinza-bg:#20262f;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;line-height:1.45}
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
+  header h1{font-size:26px;margin:0 0 4px}
+  header p{margin:0;color:var(--muted);font-size:14px}
+  .root-badge{display:inline-block;background:var(--root);color:#fff;font-weight:700;
+    padding:6px 14px;border-radius:999px;font-size:13px;margin-top:12px}
+
+  h2.sec{font-size:14px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);
+    margin:34px 0 12px;border-bottom:1px solid var(--line);padding-bottom:6px}
+
+  /* faixa de bases que atravessam tudo */
+  .bases{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .base{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--cinza);
+    border-radius:10px;padding:12px 14px}
+  .base b{display:block;font-size:14px;margin-bottom:3px}
+  .base span{font-size:12.5px;color:var(--muted)}
+
+  /* fases */
+  .phase{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:16px 18px 16px 64px;margin:14px 0;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .num{position:absolute;left:16px;top:16px;width:34px;height:34px;border-radius:50%;
+    display:grid;place-items:center;font-weight:800;color:#fff;font-size:16px}
+  .phase h3{margin:2px 0 2px;font-size:18px}
+  .goal{color:var(--muted);font-size:13.5px;margin:0 0 10px}
+  .leaves{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+  .leaf{font-size:13px;background:var(--cinza-bg);border-radius:8px;padding:6px 10px}
+  .tools{font-size:12.5px;color:var(--muted)}
+  .tools b{color:var(--ink)}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:middle}
+  .mvp{background:var(--verde-bg);color:var(--verde)}
+  .extra{background:var(--cinza-bg);color:var(--cinza)}
+
+  .p1 .num{background:var(--azul)}   .p1{border-left:4px solid var(--azul)}
+  .p2 .num{background:var(--verde)}  .p2{border-left:4px solid var(--verde)}
+  .p3 .num{background:var(--laranja)}.p3{border-left:4px solid var(--laranja)}
+  .p4 .num{background:var(--roxo)}   .p4{border-left:4px solid var(--roxo)}
+  .p5 .num{background:var(--root)}   .p5{border-left:4px solid var(--root)}
+  .p6 .num{background:var(--cinza)}  .p6{border-left:4px solid var(--cinza);border-style:dashed}
+
+  /* legenda de cores dos links */
+  .cores{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:8px}
+  .dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .note{font-size:12.5px;color:var(--muted);margin-top:18px;border-top:1px dashed var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Buscador e Baixador — Mapa Mental</h1>
+    <p>Instituto São Bento · ferramenta para achar, baixar e catalogar obras esgotadas</p>
+    <div class="root-badge">app local · roda no seu PC · usado por você e o Kaique</div>
+  </header>
+
+  <h2 class="sec">Bases que atravessam tudo (valem para todas as fases)</h2>
+  <div class="bases">
+    <div class="base"><b>🖥️ Dashboard à prova de leigo</b><span>simples, bonito, tudo bem separado. O frontend fica para o final.</span></div>
+    <div class="base"><b>🔑 Gestão de sites + login</b><span>você adiciona um site e, se ele pedir login, você loga ali no dashboard (a maioria é Google). Sem senha no código.</span></div>
+    <div class="base"><b>🤖 Botão “mandar pro Claude Pro”</b><span>opção de deixar a IA decidir a pasta, só quando você aperta. Sem IA local (PC não aguenta).</span></div>
+    <div class="base"><b>⚠️ Aviso de confiabilidade</b><span>toda categorização automática vem marcada como “palpite — confirme”.</span></div>
+  </div>
+
+  <h2 class="sec">Fases, em ordem de construção</h2>
+
+  <div class="phase p1">
+    <div class="num">1</div>
+    <h3>Mapear o site → planilha <span class="tag mvp">COMEÇAR AQUI</span></h3>
+    <p class="goal">Jogar um site e receber a lista de todos os links/PDFs, como fizemos no Grand Sud.</p>
+    <div class="leaves">
+      <span class="leaf">varre todas as páginas</span>
+      <span class="leaf">extrai links e PDFs</span>
+      <span class="leaf">verifica vivo / quebrado / login</span>
+      <span class="leaf">clique = baixa direto</span>
+      <span class="leaf">categoria leve (seção/página do site)</span>
+      <span class="leaf">título original + tradução PT (automático)</span>
+      <span class="leaf">quadrinho de explicação (quando houver)</span>
+      <span class="leaf">fórum: captura o texto da conversa em volta do link</span>
+      <span class="leaf">fórum: botão “Claude lê a conversa” → assunto provável ⚠️</span>
+    </div>
+    <div class="cores">
+      <span><span class="dot" style="background:#2b6cb0"></span>azul = precisa login</span>
+      <span><span class="dot" style="background:#b42318"></span>vermelho = quebrado</span>
+      <span><span class="dot" style="background:#1a7f45"></span>verde = baixa direto (tem PDF)</span>
+    </div>
+    <p class="tools" style="margin-top:8px"><b>Open-source:</b> requests/httpx + BeautifulSoup (varredura) · o verificar_links.py que você já tem · <b>tradução automática:</b> Argos Translate (offline, grátis) ou deep-translator · <b>explicação:</b> resumo da própria página (grátis) ou botão Claude Pro.</p>
+  </div>
+
+  <div class="phase p2">
+    <div class="num">2</div>
+    <h3>Baixar</h3>
+    <p class="goal">Baixar os PDFs marcados — inclusive os que exigem login (usando a sua sessão do dashboard).</p>
+    <div class="leaves">
+      <span class="leaf">baixa 1 ou vários (em lote)</span>
+      <span class="leaf">usa o login do dashboard quando o site pede</span>
+      <span class="leaf">guarda o sha256 (chave p/ o acervo)</span>
+    </div>
+    <p class="tools"><b>Open-source:</b> requests/httpx · reaproveitar cookies do navegador logado.</p>
+  </div>
+
+  <div class="phase p3">
+    <div class="num">3</div>
+    <h3>Baixar já organizando pelas categorias do site</h3>
+    <p class="goal">Ao baixar, separar em pastas usando a categoria que a planilha da fase 1 já achou (seção do fórum, tema da página). Sem OCR ainda.</p>
+    <div class="leaves">
+      <span class="leaf">pasta por seção/tema do site</span>
+      <span class="leaf">nomes de arquivo organizados</span>
+      <span class="leaf">rápido, sem “adivinhação”</span>
+    </div>
+    <p class="tools"><b>Open-source:</b> só Python puro (organização de pastas).</p>
+  </div>
+
+  <div class="phase p4">
+    <div class="num">4</div>
+    <h3>Catalogar o conteúdo (OCR + bases + IA opcional)</h3>
+    <p class="goal">O “garimpo” fundo: olhar dentro do PDF para chutar autor, título e tema, e separar por isso — sempre com o aviso de que é palpite.</p>
+    <div class="leaves">
+      <span class="leaf">lê texto/metadados embutidos (grátis)</span>
+      <span class="leaf">OCR nos escaneados</span>
+      <span class="leaf">confere em catálogo on-line</span>
+      <span class="leaf">le o contexto do fórum p/ encaixar</span>
+      <span class="leaf">botão Claude Pro (quando quiser mais precisão)</span>
+      <span class="leaf">⚠️ marca “não confiável”</span>
+    </div>
+    <p class="tools"><b>Open-source:</b> OCRmyPDF + Tesseract (OCR grátis, offline) · pypdf/pdfminer (texto) · Open Library / Google Books / Calibre (catalogação sem IA).</p>
+  </div>
+
+  <div class="phase p5">
+    <div class="num">5</div>
+    <h3>Buscador por nome (“buscador de insights”)</h3>
+    <p class="goal">Você digita o nome de um livro e o app procura na sua base de sites, devolvendo links para conferir se a obra está lá.</p>
+    <div class="leaves">
+      <span class="leaf">base de sites (cadastrada no dashboard)</span>
+      <span class="leaf">busca em cada site + Google restrito aos sites</span>
+      <span class="leaf">lista de links p/ clicar e conferir</span>
+      <span class="leaf">reusa fases 1–4 no que achar</span>
+    </div>
+    <p class="tools"><b>Open-source:</b> a busca de cada site + consultas “site:” no buscador.</p>
+  </div>
+
+  <div class="phase p6">
+    <div class="num">+</div>
+    <h3>Telegram <span class="tag extra">MÓDULO EXTRA · POR ÚLTIMO</span></h3>
+    <p class="goal">Procurar/baixar obras em grupos de Telegram. Tecnologia diferente dos sites — fica separado para não travar o resto.</p>
+    <div class="leaves">
+      <span class="leaf">buscar em grupos</span>
+      <span class="leaf">baixar arquivos</span>
+      <span class="leaf">entra depois que o núcleo estiver pronto</span>
+    </div>
+  </div>
+
+  <p class="note">Ordem pensada para dar valor cedo: a <b>Fase 1</b> (o mapeador) sozinha já te serve — é o que você mais usa hoje. Cada fase seguinte se apoia na anterior, em fatias pequenas. Layout/frontend “bonito” é lapidado no fim, sobre uma base que já funciona.</p>
+</div>
+</body>
+</html>

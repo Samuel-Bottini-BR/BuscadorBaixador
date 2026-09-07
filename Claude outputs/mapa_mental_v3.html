@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa Mental — Buscador e Baixador</title>
+<style>
+  :root{
+    --bg:#f4f6fa; --ink:#1e2430; --muted:#5c6674; --line:#cfd6e0; --card:#fff; --chip:#eef2f7;
+    --root:#1F3864; --azul:#2b6cb0; --verde:#1a7f45; --laranja:#c26a12; --roxo:#6b3fa0; --rosa:#b83280; --cinza:#5b6675;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#10141b; --ink:#e8ecf2; --muted:#98a3b2; --line:#2d3646; --card:#1a2029; --chip:#232b36;
+    --root:#9cbcea; --azul:#7fb0e6; --verde:#7fd0a0; --laranja:#e2a862; --roxo:#c3a7ea; --rosa:#e69bc4; --cinza:#aab4c2;
+  }}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);line-height:1.45;
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+  .wrap{max-width:940px;margin:0 auto;padding:22px 18px 60px}
+  h1{font-size:23px;margin:0 0 3px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 6px}
+  .hint{font-size:12px;color:var(--muted);background:var(--chip);display:inline-block;
+    padding:5px 10px;border-radius:999px;margin-top:8px}
+  .center{background:var(--root);color:#fff;border-radius:16px;padding:14px 18px;margin:16px 0 8px;
+    text-align:center;box-shadow:0 5px 16px rgba(0,0,0,.18)}
+  .center b{font-size:18px} .center span{opacity:.9;font-size:12.5px}
+  h2.grp{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+    margin:24px 0 8px}
+
+  details{background:var(--card);border:1px solid var(--line);border-left-width:5px;border-radius:12px;
+    margin:9px 0;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:10px;
+    font-weight:700;font-size:15px;user-select:none}
+  summary::-webkit-details-marker{display:none}
+  .badge{width:24px;height:24px;border-radius:50%;color:#fff;font-size:13px;font-weight:800;
+    display:grid;place-items:center;flex:0 0 auto}
+  .chev{margin-left:auto;color:var(--muted);font-size:13px;transition:transform .2s}
+  details[open] .chev{transform:rotate(90deg)}
+  .tagline{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;color:#fff}
+  .go{background:var(--verde)} .ex{background:var(--cinza)}
+  .body{padding:0 14px 14px 48px}
+  .goal{color:var(--muted);font-size:13px;margin:0 0 9px}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 9px}
+  .chip{font-size:12.5px;background:var(--chip);border-radius:8px;padding:6px 10px}
+  .cores{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:2px 0 9px}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .tools{font-size:12px;color:var(--muted)} .tools b{color:var(--ink)}
+
+  .cinza{border-left-color:var(--cinza)} .cinza .badge{background:var(--cinza)}
+  .azul{border-left-color:var(--azul)} .verde{border-left-color:var(--verde)}
+  .laranja{border-left-color:var(--laranja)} .roxo{border-left-color:var(--roxo)}
+  .rosa{border-left-color:var(--rosa)} .dash{border-left-color:var(--cinza);border-left-style:dashed}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Buscador e Baixador — mapa mental</h1>
+  <p class="sub">Instituto São Bento · app local para achar, baixar e catalogar obras</p>
+  <div class="hint">👆 clique em cada caixa para abrir os detalhes</div>
+
+  <div class="center"><b>Buscador e Baixador</b><br><span>app local · roda no seu PC · usado por você e o Kaique</span></div>
+
+  <h2 class="grp">Bases — valem para todas as fases</h2>
+
+  <details class="cinza">
+    <summary>🖥️ Dashboard à prova de leigo <span class="chev">▸</span></summary>
+    <div class="body">
+      <div class="chips">
+        <span class="chip">simples e bonito</span>
+        <span class="chip">tudo bem separado, sem confusão</span>
+        <span class="chip">frontend/layout fica para o final</span>
+      </div>
+    </div>
+  </details>
+
+  <details class="cinza">
+    <summary>🔑 Gestão de sites + login <span class="chev">▸</span></summary>
+    <div class="body">
+      <div class="chips">
+        <span class="chip">adiciona um site novo</span>
+        <span class="chip">loga ali no dashboard quando o site pede (maioria Google)</span>
+        <span class="chip">troca de conta sem mexer no código</span>
+        <span class="chip">sem senha escrita na programação</span>
+      </div>
+    </div>
+  </details>
+
+  <details class="cinza">
+    <summary>🤖 Botão "mandar pro Claude Pro" <span class="chev">▸</span></summary>
+    <div class="body">
+      <div class="chips">
+        <span class="chip">manda os dados e o Claude diz a pasta</span>
+        <span class="chip">IA só quando você aperta o botão</span>
+        <span class="chip">sem IA local (o PC não aguenta)</span>
+      </div>
+    </div>
+  </details>
+
+  <details class="cinza">
+    <summary>⚠️ Aviso "não confiável" <span class="chev">▸</span></summary>
+    <div class="body">
+      <div class="chips">
+        <span class="chip">toda categorização automática vem como palpite</span>
+        <span class="chip">o humano confirma antes de valer</span>
+      </div>
+    </div>
+  </details>
+
+  <h2 class="grp">Fases — em ordem de construção</h2>
+
+  <details class="azul" open>
+    <summary><span class="badge">1</span> Mapear site → planilha <span class="tagline go">COMEÇAR AQUI</span><span class="chev">▸</span></summary>
+    <div class="body">
+      <p class="goal">Jogar um site e receber a lista de todos os links/PDFs, como fizemos no Grand Sud.</p>
+      <div class="chips">
+        <span class="chip">varre todas as páginas</span>
+        <span class="chip">extrai links e PDFs</span>
+        <span class="chip">verifica vivo / quebrado / login</span>
+        <span class="chip">clique = baixa direto</span>
+        <span class="chip">categoria leve (seção/página do site)</span>
+        <span class="chip">título original + tradução PT (automático)</span>
+        <span class="chip">quadrinho de explicação (quando houver)</span>
+        <span class="chip">fórum: captura o texto da conversa em volta do link</span>
+        <span class="chip">fórum: botão "Claude lê a conversa" → assunto provável ⚠️</span>
+      </div>
+      <div class="cores">
+        <span><span class="dot" style="background:#2b6cb0"></span>azul = precisa login</span>
+        <span><span class="dot" style="background:#b42318"></span>vermelho = quebrado</span>
+        <span><span class="dot" style="background:#1a7f45"></span>verde = baixa direto (tem PDF)</span>
+      </div>
+      <p class="tools"><b>Open-source:</b> requests/httpx + BeautifulSoup (varredura) · o verificar_links.py que você já tem · tradução: Argos Translate (offline, grátis) ou deep-translator · explicação: resumo da própria página ou botão Claude Pro.</p>
+    </div>
+  </details>
+
+  <details class="verde">
+    <summary><span class="badge">2</span> Baixar <span class="chev">▸</span></summary>
+    <div class="body">
+      <p class="goal">Baixar os PDFs marcados — inclusive os que exigem login, usando a sua sessão do dashboard.</p>
+      <div class="chips">
+        <span class="chip">baixa 1 ou vários (em lote)</span>
+        <span class="chip">usa o login do dashboard quando o site pede</span>
+        <span class="chip">guarda o sha256 (chave p/ o acervo)</span>
+      </div>
+      <p class="tools"><b>Open-source:</b> requests/httpx · reaproveitar os cookies do navegador logado.</p>
+    </div>
+  </details>
+
+  <details class="laranja">
+    <summary><span class="badge">3</span> Baixar já organizando por categoria do site <span class="chev">▸</span></summary>
+    <div class="body">
+      <p class="goal">Ao baixar, separar em pastas usando a categoria que a planilha da Fase 1 já achou. Sem OCR ainda.</p>
+      <div class="chips">
+        <span class="chip">pasta por seção/tema do site</span>
+        <span class="chip">nomes de arquivo organizados</span>
+        <span class="chip">rápido, sem "adivinhação"</span>
+      </div>
+      <p class="tools"><b>Open-source:</b> só Python puro (organização de pastas).</p>
+    </div>
+  </details>
+
+  <details class="roxo">
+    <summary><span class="badge">4</span> Catalogar o conteúdo (OCR + bases + IA opcional) <span class="chev">▸</span></summary>
+    <div class="body">
+      <p class="goal">O "garimpo" fundo: olhar dentro do PDF para chutar autor, título e tema, e separar por isso — sempre com aviso de palpite.</p>
+      <div class="chips">
+        <span class="chip">lê texto/metadados embutidos (grátis)</span>
+        <span class="chip">OCR nos escaneados</span>
+        <span class="chip">confere em catálogo on-line</span>
+        <span class="chip">lê o contexto do fórum p/ encaixar</span>
+        <span class="chip">botão Claude Pro (mais precisão)</span>
+        <span class="chip">⚠️ marca "não confiável"</span>
+      </div>
+      <p class="tools"><b>Open-source:</b> OCRmyPDF + Tesseract (OCR grátis, offline) · pypdf/pdfminer (texto) · Open Library / Google Books / Calibre (catalogação sem IA).</p>
+    </div>
+  </details>
+
+  <details class="rosa">
+    <summary><span class="badge">5</span> Buscador por nome ("buscador de insights") <span class="chev">▸</span></summary>
+    <div class="body">
+      <p class="goal">Você digita o nome de um livro e o app procura na sua base de sites, devolvendo links para conferir.</p>
+      <div class="chips">
+        <span class="chip">base de sites (cadastrada no dashboard)</span>
+        <span class="chip">busca em cada site + Google restrito (site:)</span>
+        <span class="chip">lista de links p/ clicar e conferir</span>
+        <span class="chip">reusa as Fases 1–4 no que achar</span>
+      </div>
+    </div>
+  </details>
+
+  <details class="dash">
+    <summary><span class="badge" style="background:var(--cinza)">+</span> Telegram <span class="tagline ex">MÓDULO EXTRA · POR ÚLTIMO</span><span class="chev">▸</span></summary>
+    <div class="body">
+      <p class="goal">Procurar/baixar obras em grupos de Telegram — tecnologia diferente dos sites.</p>
+      <div class="chips">
+        <span class="chip">buscar em grupos</span>
+        <span class="chip">baixar arquivos</span>
+        <span class="chip">entra depois que o núcleo estiver pronto</span>
+      </div>
+    </div>
+  </details>
+
+</div>
+</body>
+</html>

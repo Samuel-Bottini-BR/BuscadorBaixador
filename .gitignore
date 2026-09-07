@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Planilhas de trabalho (dados do garimpo, não pertencem ao repositório)
+*.xlsx
+*_VERIFICADO.xlsx
+
+# Saidas geradas pelo motor (planilhas do dia a dia, nao pertencem ao repositorio)
+saidas/*
+!saidas/.gitkeep
+
+# Chave da API da DDB e outras configuracoes locais - nunca commitar
+buscador.local.cfg
