@@ -16,6 +16,7 @@ class Item:
     tipo: str = ""
     explicacao: str = ""
     fonte: str = ""
+    provedor: str = ""
     secao: str = ""
     url_pagina: str = ""
     status_link: str = ""

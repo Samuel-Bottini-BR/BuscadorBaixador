@@ -12,11 +12,12 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from buscador.core.verificacao_links import COR
 
 COLUNAS = ["titulo_original", "titulo_pt", "autor", "ano", "link", "tipo",
-           "status_link", "explicacao", "fonte", "avaliacao_humana"]
+           "status_link", "explicacao", "fonte", "provedor", "avaliacao_humana"]
 OPCOES_AVALIACAO = ["Aprovar", "Rejeitar", "Talvez / rever", "Já no acervo", "Duplicado"]
 LARGURAS = {
     "titulo_original": 40, "titulo_pt": 40, "autor": 20, "ano": 8, "link": 50,
-    "tipo": 14, "status_link": 20, "explicacao": 60, "fonte": 25, "avaliacao_humana": 16,
+    "tipo": 14, "status_link": 20, "explicacao": 60, "fonte": 25, "provedor": 20,
+    "avaliacao_humana": 16,
 }
 LINHAS_EXTRAS_DROPDOWN = 1000  # espaco a mais no dropdown, pra quem for preencher linhas novas a mao
 
@@ -55,7 +56,8 @@ def gerar_planilha(itens, caminho_saida, nome_aba="Links"):
 def _linha_de_item(item):
     return [
         item.titulo_original, item.titulo_pt, item.autor, item.ano, item.link,
-        item.tipo, item.status_link, item.explicacao, item.fonte, item.avaliacao_humana,
+        item.tipo, item.status_link, item.explicacao, item.fonte, item.provedor,
+        item.avaliacao_humana,
     ]
 
 

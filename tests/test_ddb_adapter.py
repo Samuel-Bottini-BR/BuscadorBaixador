@@ -5,7 +5,7 @@ import pathlib
 import httpx
 import pytest
 
-from buscador.adapters.ddb import DdbAdapter, DdbApiError, _idioma_iso, _primeiro
+from buscador.adapters.ddb import PROVIDER_ID_ZVDD, DdbAdapter, DdbApiError, _idioma_iso, _primeiro
 
 FIXTURE = json.loads((pathlib.Path(__file__).parent / "fixtures" / "ddb" / "busca_clavius.json").read_text(encoding="utf-8"))
 DOCS = FIXTURE["response"]["docs"]
@@ -35,6 +35,7 @@ def test_item_de_registro_mapeia_campos():
     assert item.titulo_original == "Algebra Christophori Clavii"
     assert item.autor == "Christophorus Clavius"
     assert item.fonte == "Max-Planck-Institut für Wissenschaftsgeschichte"
+    assert item.provedor == "zvdd"
     assert item.ano == "1608"
     assert item.link == "https://www.deutsche-digitale-bibliothek.de/item/G5ZN3SJPJ4MQKERNGUAK32IWF52R7PIH"
     assert item.extra["idioma_origem"] == "la"
@@ -104,3 +105,46 @@ def test_sem_resultados_nao_quebra():
     cliente = _cliente_com_handler(handler)
     adapter = DdbAdapter("nada-encontrado", api_key="chave-teste", cliente=cliente)
     assert list(adapter.iter_itens()) == []
+
+
+def test_filtro_por_provedor_vai_na_requisicao():
+    chamadas = []
+
+    def handler(request):
+        chamadas.append(dict(request.url.params))
+        return httpx.Response(200, json=FIXTURE)
+
+    cliente = _cliente_com_handler(handler)
+    adapter = DdbAdapter("*", api_key="chave-teste", cliente=cliente, provider_fct=PROVIDER_ID_ZVDD)
+    list(adapter.iter_itens())
+
+    assert chamadas[0]["provider_fct"] == PROVIDER_ID_ZVDD
+
+
+def test_sem_filtro_de_provedor_nao_manda_o_parametro():
+    chamadas = []
+
+    def handler(request):
+        chamadas.append(dict(request.url.params))
+        return httpx.Response(200, json=FIXTURE)
+
+    cliente = _cliente_com_handler(handler)
+    adapter = DdbAdapter("Christophori Clavii", api_key="chave-teste", cliente=cliente)
+    list(adapter.iter_itens())
+
+    assert "provider_fct" not in chamadas[0]
+
+
+def test_contar_retorna_numfound_sem_baixar_itens():
+    chamadas = []
+
+    def handler(request):
+        chamadas.append(dict(request.url.params))
+        return httpx.Response(200, json={"response": {"numFound": 42, "start": 0, "docs": []}})
+
+    cliente = _cliente_com_handler(handler)
+    adapter = DdbAdapter("*", api_key="chave-teste", cliente=cliente, provider_fct=PROVIDER_ID_ZVDD)
+
+    assert adapter.contar() == 42
+    assert chamadas[0]["rows"] == "0"
+    assert chamadas[0]["provider_fct"] == PROVIDER_ID_ZVDD
