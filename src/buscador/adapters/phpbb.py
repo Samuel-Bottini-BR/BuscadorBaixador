@@ -2,6 +2,8 @@
 """Adaptador para foruns phpBB classicos (estilo prosilver). Caso de teste:
 Grand Sud Medieval (https://grand-sud-medieval.fr/forum/), sem robots.txt
 publicado -- raspagem educada via ClienteEducado (secao 7 do CLAUDE.md)."""
+from urllib.parse import urljoin
+
 from bs4 import BeautifulSoup, Comment, NavigableString
 
 from buscador.adapters.base import Item, SiteAdapter
@@ -26,16 +28,18 @@ class PhpbbAdapter(SiteAdapter):
         yield from self._iter_topico(self.url_inicial)
 
     def _iter_topico(self, url):
-        resposta = self.cliente.get(url)
-        _titulo, _secao, itens, _proxima = self._parse_pagina(resposta.text, url)
-        yield from itens
+        while url:
+            resposta = self.cliente.get(url)
+            _titulo, _secao, itens, proxima = self._parse_pagina(resposta.text, url)
+            yield from itens
+            url = proxima
 
     def _parse_pagina(self, html, url_pagina):
         soup = BeautifulSoup(html, "html.parser")
         titulo = self._extrair_titulo_topico(soup)
         secao = self._extrair_secao(soup)
         itens = self._extrair_posts(soup, secao, titulo, url_pagina)
-        proxima = self._proxima_pagina(soup)
+        proxima = self._proxima_pagina(soup, url_pagina)
         return titulo, secao, itens, proxima
 
     def _extrair_titulo_topico(self, soup):
@@ -96,6 +100,21 @@ class PhpbbAdapter(SiteAdapter):
             comentario.extract()
         return content.get_text(separator=" ", strip=True)
 
-    def _proxima_pagina(self, soup):
-        # Paginacao ainda nao implementada -- fatia seguinte.
-        return None
+    def _proxima_pagina(self, soup, url_atual):
+        """A div.pagination do phpBB tem um <span> com a lista de paginas:
+        a atual vem como <strong>, as outras como <a>. A proxima pagina e
+        o primeiro <a> depois do <strong> atual (None se so tem 1 pagina)."""
+        pag = soup.select_one("div.pagination")
+        if pag is None:
+            return None
+        lista = pag.find("span")
+        if lista is None:
+            return None
+        atual = lista.find("strong")
+        if atual is None:
+            return None
+        proximo = atual.find_next_sibling("a")
+        if proximo is None:
+            return None
+        href = proximo.get("href")
+        return urljoin(url_atual, href) if href else None

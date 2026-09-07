@@ -70,3 +70,41 @@ def test_data_do_post_extraida_sem_o_comentario_html():
 def test_idioma_origem_frances():
     itens = _itens_da_pagina_1()
     assert all(item.extra["idioma_origem"] == "fr" for item in itens)
+
+
+def _cliente_fake_paginado():
+    """Roteia por trecho da URL: devolve a pagina 2 quando 'start=15' aparece,
+    a pagina 1 caso contrario -- assim como o forum de verdade faria."""
+    pagina1 = (FIXTURES / "viewtopic_f14_t10425_p1.html").read_text(encoding="utf-8")
+    pagina2 = (FIXTURES / "viewtopic_f14_t10425_p2.html").read_text(encoding="utf-8")
+
+    cliente = MagicMock()
+
+    def get(url):
+        resposta = MagicMock()
+        resposta.text = pagina2 if "start=15" in url else pagina1
+        return resposta
+
+    cliente.get.side_effect = get
+    return cliente
+
+
+def test_segue_para_proxima_pagina_e_para_no_fim():
+    cliente = _cliente_fake_paginado()
+    url = "https://grand-sud-medieval.fr/forum/viewtopic.php?f=14&t=10425"
+    adapter = PhpbbAdapter(url, cliente=cliente)
+
+    list(adapter.iter_itens())  # este topico nao tem links, mas precisa varrer as 2 paginas
+
+    assert cliente.get.call_count == 2
+    primeira_url, segunda_url = (chamada.args[0] for chamada in cliente.get.call_args_list)
+    assert "t=10425" in primeira_url and "start=" not in primeira_url
+    assert "start=15" in segunda_url
+
+
+def test_pagina_unica_nao_tenta_seguir_paginacao():
+    # o topico t=9264 (usado nos testes acima) so tem 1 pagina
+    cliente = _cliente_fake((FIXTURES / "viewtopic_f14_t9264_p1.html").read_text(encoding="utf-8"))
+    adapter = PhpbbAdapter("https://grand-sud-medieval.fr/forum/viewtopic.php?f=14&t=9264", cliente=cliente)
+    list(adapter.iter_itens())
+    assert cliente.get.call_count == 1
