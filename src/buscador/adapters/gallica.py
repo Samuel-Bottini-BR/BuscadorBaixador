@@ -38,14 +38,23 @@ class GallicaAdapter(SiteAdapter):
     INTERVALO_SEGUNDOS = 6.0
 
     def __init__(self, consulta, cliente=None, max_resultados=MAXIMO_POR_PAGINA,
-                 tamanho_pagina=MAXIMO_POR_PAGINA):
+                 tamanho_pagina=MAXIMO_POR_PAGINA, startrecord_inicial=1):
         self.consulta = consulta
         self.cliente = cliente or ClienteEducado(USER_AGENT, intervalo_segundos=self.INTERVALO_SEGUNDOS)
         self.max_resultados = max_resultados
         self.tamanho_pagina = min(tamanho_pagina, MAXIMO_POR_PAGINA)
+        self.startrecord_inicial = startrecord_inicial  # permite retomar de onde parou (coleta longa)
 
     def iter_itens(self):
-        inicio = 1  # SRU pagina a partir de 1, nao de 0
+        for _inicio_pagina, itens_pagina in self.iter_paginas():
+            yield from itens_pagina
+
+    def iter_paginas(self):
+        """Gera (inicio_da_pagina, [itens_da_pagina]) -- uma pagina inteira
+        de cada vez, em vez de um fluxo achatado de itens. Usado pela coleta
+        longa (core/coleta_gallica.py) pra so avancar o checkpoint depois
+        que uma pagina inteira foi processada com sucesso."""
+        inicio = self.startrecord_inicial  # SRU pagina a partir de 1, nao de 0
         total = None
         while inicio <= self.max_resultados and (total is None or inicio <= total):
             raiz = self._buscar_pagina(inicio, self.tamanho_pagina)
@@ -54,8 +63,8 @@ class GallicaAdapter(SiteAdapter):
             registros = _elementos_por_nome_local(raiz, "record")
             if not registros:
                 return
-            for registro in registros:
-                yield self._item_de_registro(registro)
+            itens_pagina = [self._item_de_registro(registro) for registro in registros]
+            yield inicio, itens_pagina
             inicio += len(registros)
 
     def _buscar_pagina(self, start_record, maximum_records):

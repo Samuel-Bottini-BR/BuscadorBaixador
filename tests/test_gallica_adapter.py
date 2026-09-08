@@ -100,6 +100,55 @@ def test_paginacao_por_startrecord_ate_esgotar():
     assert itens[2].titulo_original == "Correspondance sur les travaux de Clavius (étude moderne)"
 
 
+def test_startrecord_inicial_comeca_a_paginacao_de_onde_foi_pedido():
+    chamadas = []
+
+    def get(url):
+        parametros = parse_qs(urlparse(url).query)
+        chamadas.append(parametros)
+        inicio = int(parametros["startRecord"][0]) - 1
+        quantidade = int(parametros["maximumRecords"][0])
+        return _resposta(_xml_pagina(inicio, quantidade))
+
+    cliente = MagicMock()
+    cliente.get.side_effect = get
+
+    adapter = GallicaAdapter('gallica all "Clavius"', cliente=cliente, tamanho_pagina=2,
+                              startrecord_inicial=3)
+    itens = list(adapter.iter_itens())
+
+    assert len(itens) == 1  # so sobra o terceiro registro da fixture
+    assert chamadas[0]["startRecord"] == ["3"]
+    assert itens[0].titulo_original == "Correspondance sur les travaux de Clavius (étude moderne)"
+
+
+def test_iter_paginas_devolve_o_inicio_de_cada_pagina_junto_dos_itens():
+    # cliente fake devolve sempre a fixture inteira (3 registros), ignorando
+    # os parametros pedidos -- entao so ha 1 "pagina" nesse caso, com os 3
+    adapter = GallicaAdapter('gallica all "Clavius"', cliente=_cliente_fake(FIXTURE_TEXTO))
+    paginas = list(adapter.iter_paginas())
+
+    assert [inicio for inicio, _itens in paginas] == [1]
+    assert len(paginas[0][1]) == 3
+
+
+def test_iter_paginas_com_paginacao_real_marca_o_inicio_certo_por_pagina():
+    def get(url):
+        parametros = parse_qs(urlparse(url).query)
+        inicio = int(parametros["startRecord"][0]) - 1
+        quantidade = int(parametros["maximumRecords"][0])
+        return _resposta(_xml_pagina(inicio, quantidade))
+
+    cliente = MagicMock()
+    cliente.get.side_effect = get
+
+    adapter = GallicaAdapter('gallica all "Clavius"', cliente=cliente, tamanho_pagina=2)
+    paginas = list(adapter.iter_paginas())
+
+    assert [inicio for inicio, _itens in paginas] == [1, 3]
+    assert [len(itens) for _inicio, itens in paginas] == [2, 1]
+
+
 def test_sem_resultados_nao_quebra():
     xml_vazio = (
         '<srw:searchRetrieveResponse xmlns:srw="http://www.loc.gov/zing/srw/">'
