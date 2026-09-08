@@ -60,10 +60,11 @@ def test_construir_adapter_gallica():
 
 def test_main_ponta_a_ponta_com_adapter_fake(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "construir_adapter", lambda nome, url: AdapterFake(url))
-    monkeypatch.setattr(cli, "analisar", lambda link: (
+    monkeypatch.setattr("buscador.core.enriquecimento.analisar", lambda link: (
         ("vivo (pdf direto)", "verde") if link.endswith(".pdf") else ("requer login", "requer login")
     ))
-    monkeypatch.setattr(cli, "traduzir", lambda texto, idioma_origem="auto", idioma_destino="pt": f"{texto} (PT)")
+    monkeypatch.setattr("buscador.core.enriquecimento.traduzir",
+                         lambda texto, idioma_origem="auto", idioma_destino="pt": f"{texto} (PT)")
 
     destino = tmp_path / "saida.xlsx"
     codigo = cli.main([
@@ -85,8 +86,9 @@ def test_main_ponta_a_ponta_com_adapter_fake(tmp_path, monkeypatch):
 
 def test_main_usa_caminho_padrao_quando_sem_saida(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "construir_adapter", lambda nome, url: AdapterFake(url))
-    monkeypatch.setattr(cli, "analisar", lambda link: ("vivo (pdf direto)", "verde"))
-    monkeypatch.setattr(cli, "traduzir", lambda texto, idioma_origem="auto", idioma_destino="pt": texto)
+    monkeypatch.setattr("buscador.core.enriquecimento.analisar", lambda link: ("vivo (pdf direto)", "verde"))
+    monkeypatch.setattr("buscador.core.enriquecimento.traduzir",
+                         lambda texto, idioma_origem="auto", idioma_destino="pt": texto)
     monkeypatch.setattr(cli, "SAIDAS", tmp_path)
 
     codigo = cli.main(["https://grand-sud-medieval.fr/forum/viewtopic.php?f=14&t=1", "--adapter", "phpbb"])

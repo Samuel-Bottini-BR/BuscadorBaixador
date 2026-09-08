@@ -9,9 +9,8 @@ from urllib.parse import parse_qs, urlparse
 
 from buscador.adapters.gallica import GallicaAdapter
 from buscador.adapters.phpbb import PhpbbAdapter
+from buscador.core.enriquecimento import enriquecer_item
 from buscador.core.planilha import gerar_planilha
-from buscador.core.traducao import traduzir
-from buscador.core.verificacao_links import analisar, classificar_tipo
 
 ADAPTERS_POR_DOMINIO = {
     "grand-sud-medieval.fr": "phpbb",
@@ -47,15 +46,6 @@ def _extrair_consulta_gallica(valor):
         if parametros.get("query"):
             return parametros["query"][0]
     return valor
-
-
-def enriquecer_item(item):
-    status_texto, categoria = analisar(item.link)
-    item.status_link = status_texto
-    item.tipo = classificar_tipo(status_texto, categoria)
-    item.extra["categoria"] = categoria
-    item.titulo_pt = traduzir(item.titulo_original, idioma_origem=item.extra.get("idioma_origem", "auto"))
-    return item
 
 
 def _slug_do_dominio(url_ou_consulta):
