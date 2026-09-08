@@ -266,6 +266,16 @@ parte do caminho crítico da Fase 1.
    zvdd como caso de teste — incluindo **como acessar o zvdd de forma permitida**
    (opções da seção 7). Espere meu "ok" antes de codar.
 
+## Checkpoint de contexto (`/checkpoint`)
+Existe um comando pessoal, `/checkpoint` (fora deste repositório — vale pra
+todos os projetos), que atualiza o `HANDOFF.md`, comita/envia, e avisa que é
+seguro limpar o contexto ou começar uma conversa nova. **Sugira rodá-lo**
+(não precisa esperar o Samuel pedir) quando: uma fase inteira for concluída,
+uma investigação longa for resolvida (ex.: uma sessão de debug ou pesquisa
+que consumiu muitas mensagens), ou a conversa estiver visivelmente longa e
+prestes a mudar de assunto. Nunca rode o comando sozinho sem avisar — só
+sugira, o Samuel decide quando.
+
 ## Commit e push regulares
 
 Quando este repositório tiver GitHub remoto configurado, faça commit do progresso
