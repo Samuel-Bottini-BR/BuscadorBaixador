@@ -37,30 +37,55 @@ def test_mantem_original_quando_os_dois_falham():
     assert resultado == "texto original"
 
 
-def test_traduzir_online_tenta_de_novo_antes_de_desistir():
+def test_traduzir_google_tenta_de_novo_antes_de_desistir():
     # O deep-translator (busca gratuita do Google) e instavel na pratica: a
     # mesma frase pode falhar e funcionar em chamadas seguidas -- vale tentar
-    # de novo antes de cair pro offline por causa de uma falha passageira.
+    # de novo antes de desistir por causa de uma falha passageira.
     tradutor_fake = MagicMock()
     tradutor_fake.translate.side_effect = [Exception("instabilidade"), "traduzido"]
     with patch("deep_translator.GoogleTranslator", return_value=tradutor_fake), \
          patch.object(traducao.time, "sleep"):
-        resultado = traducao._traduzir_online("texto", "fr", "pt")
+        resultado = traducao._traduzir_google("texto", "fr", "pt")
     assert resultado == "traduzido"
     assert tradutor_fake.translate.call_count == 2
 
 
-def test_traduzir_online_desiste_apos_todas_as_tentativas():
+def test_traduzir_google_desiste_apos_todas_as_tentativas():
     tradutor_fake = MagicMock()
     tradutor_fake.translate.side_effect = Exception("sempre falha")
     with patch("deep_translator.GoogleTranslator", return_value=tradutor_fake), \
          patch.object(traducao.time, "sleep"):
         try:
-            traducao._traduzir_online("texto", "fr", "pt")
+            traducao._traduzir_google("texto", "fr", "pt")
             assert False, "deveria ter levantado"
         except Exception as e:
             assert str(e) == "sempre falha"
     assert tradutor_fake.translate.call_count == traducao.TENTATIVAS_ONLINE
+
+
+def test_online_cai_para_mymemory_quando_google_falha():
+    with patch.object(traducao, "_traduzir_google", side_effect=Exception("google instavel")), \
+         patch.object(traducao, "_traduzir_mymemory", return_value="traduzido via mymemory") as mymemory:
+        resultado = traducao._traduzir_online("texto", "la", "pt")
+    assert resultado == "traduzido via mymemory"
+    mymemory.assert_called_once_with("texto", "la", "pt")
+
+
+def test_mymemory_usa_nomes_por_extenso():
+    tradutor_fake = MagicMock()
+    tradutor_fake.translate.return_value = "traduzido"
+    with patch("deep_translator.MyMemoryTranslator", return_value=tradutor_fake) as construtor:
+        resultado = traducao._traduzir_mymemory("texto em latim", "la", "pt")
+    assert resultado == "traduzido"
+    construtor.assert_called_once_with(source="latin", target="portuguese")
+
+
+def test_mymemory_recusa_idioma_desconhecido():
+    try:
+        traducao._traduzir_mymemory("texto", "xx", "pt")
+        assert False, "deveria ter levantado"
+    except traducao.ErroTraducao:
+        pass
 
 
 def test_offline_com_idioma_auto_levanta_erro_tratado():

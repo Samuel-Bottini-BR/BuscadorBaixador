@@ -16,6 +16,14 @@ _MODELOS_ARGOS_INSTALADOS = set()
 TENTATIVAS_ONLINE = 3
 ESPERA_ENTRE_TENTATIVAS = 1.0
 
+# O MyMemoryTranslator quer o nome do idioma por extenso, nao o codigo ISO.
+# So os idiomas que os adaptadores realmente produzem (secao 7 do CLAUDE.md:
+# cada adaptador novo grava idioma_origem em Item.extra ao encontrar um).
+_MAPA_MYMEMORY = {
+    "fr": "french", "de": "german", "en": "english",
+    "la": "latin", "el": "greek", "pt": "portuguese",
+}
+
 
 class ErroTraducao(Exception):
     pass
@@ -36,19 +44,48 @@ def traduzir(texto, idioma_origem="auto", idioma_destino="pt"):
 
 
 def _traduzir_online(texto, origem, destino):
-    from deep_translator import GoogleTranslator
-    tradutor = GoogleTranslator(source=origem, target=destino)
+    """Tenta o Google primeiro (melhor qualidade quando funciona) e, se
+    falhar, tenta o MyMemory antes de desistir do caminho online -- o
+    MyMemory cobre idiomas (como latim) que o argostranslate offline nem
+    tem pacote pra baixar."""
+    try:
+        return _traduzir_google(texto, origem, destino)
+    except Exception as erro_google:
+        logger.warning("Google Translate falhou (%s); tentando MyMemory...", erro_google)
+        return _traduzir_mymemory(texto, origem, destino)
+
+
+def _com_retentativas(nome_servico, funcao):
+    """Chama funcao() ate TENTATIVAS_ONLINE vezes -- os dois servicos gratuitos
+    (Google e MyMemory) tem o mesmo comportamento na pratica: a mesma frase
+    falha e funciona em chamadas diferentes."""
     ultimo_erro = None
     for tentativa in range(1, TENTATIVAS_ONLINE + 1):
         try:
-            return tradutor.translate(texto)
+            return funcao()
         except Exception as erro:
             ultimo_erro = erro
             if tentativa < TENTATIVAS_ONLINE:
-                logger.warning("Tentativa %d/%d de tradução online falhou (%s); tentando de novo...",
-                                tentativa, TENTATIVAS_ONLINE, erro)
+                logger.warning("Tentativa %d/%d de tradução online (%s) falhou (%s); tentando de novo...",
+                                tentativa, TENTATIVAS_ONLINE, nome_servico, erro)
                 time.sleep(ESPERA_ENTRE_TENTATIVAS)
     raise ultimo_erro
+
+
+def _traduzir_google(texto, origem, destino):
+    from deep_translator import GoogleTranslator
+    tradutor = GoogleTranslator(source=origem, target=destino)
+    return _com_retentativas("Google", lambda: tradutor.translate(texto))
+
+
+def _traduzir_mymemory(texto, origem, destino):
+    if origem not in _MAPA_MYMEMORY:
+        raise ErroTraducao(f"MyMemory precisa de um idioma de origem conhecido, recebi '{origem}'")
+    from deep_translator import MyMemoryTranslator
+    nome_origem = _MAPA_MYMEMORY[origem]
+    nome_destino = _MAPA_MYMEMORY.get(destino, destino)
+    tradutor = MyMemoryTranslator(source=nome_origem, target=nome_destino)
+    return _com_retentativas("MyMemory", lambda: tradutor.translate(texto))
 
 
 def _traduzir_offline(texto, origem, destino):

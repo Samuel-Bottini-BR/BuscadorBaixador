@@ -116,7 +116,10 @@ def _dominio_publico(texto_direitos):
     return "Sim" if any(t in texto for t in _TERMOS_DOMINIO_PUBLICO) else "Não"
 
 
-_MAPA_IDIOMA = {"fre": "fr", "fra": "fr", "français": "fr", "lat": "la", "latin": "la", "eng": "en"}
+_MAPA_IDIOMA = {
+    "fre": "fr", "fra": "fr", "français": "fr", "lat": "la", "latin": "la",
+    "eng": "en", "gre": "el", "grc": "el", "greek": "el", "grec": "el",
+}
 
 
 def _idioma_iso(idioma):

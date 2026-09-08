@@ -46,14 +46,22 @@ dropdown de avaliação, no mesmo estilo do `Garimpo_GSM_MESTRE_VERIFICADO.xlsx`
   o `ClienteEducado` agora tenta de novo automaticamente em 429 (espera
   dobrando: 5s/10s/20s) antes de desistir. Buscas com mais de 50 resultados
   reais ainda podem esbarrar nisso se pedir várias páginas seguidas.
-- **Sem tradução offline para latim:** o `argostranslate` não tem pacote
-  `la→en` (só `fr→en`, `de→en`, `en→pt`) — títulos em latim só traduzem se o
-  serviço online (instável) funcionar naquela hora; senão ficam no original.
-- **`dominio_publico` da Gallica é uma checagem de texto simples** (procura
-  "domaine public"/"public domain" no `dc:rights`) — em teste real, duas
-  obras do próprio Clavius (1586, 1593) vieram marcadas "Não", o que é
-  estranho pra obras tão antigas; pode ser nuance do metadado da Gallica
-  que vale investigar melhor antes de confiar cegamente nessa coluna.
+- **Sem tradução offline para latim** (o `argostranslate` não tem nenhum
+  pacote de latim, nem via pivô) **— mas agora há uma segunda tentativa
+  online (`MyMemoryTranslator`) antes de desistir**, que cobre latim (grego
+  também tem pacote offline, já baixado e testado: `el→en→pt`). Testado ao
+  vivo: 3/3 traduções de latim funcionaram com o MyMemory como reserva do
+  Google. Só falha de verdade se as duas APIs online estiverem fora do ar
+  ao mesmo tempo — nesse caso o título fica no original, nunca quebra o
+  programa.
+- **`dominio_publico` da Gallica confirmado correto, não é bug:** duas obras
+  do Clavius (1586, 1593) vieram marcadas "Não" — investiguei o XML cru e a
+  Gallica realmente marca essas digitalizações específicas como
+  `"conditions spécifiques d'utilisation"` (vieram de acordos com outras
+  instituições, ex. Observatoire de Paris, com restrição na imagem
+  digitalizada — mesmo a obra original de 400+ anos sendo de domínio
+  público). A coluna está lendo certo; a checagem de texto em `dc:rights`
+  (procura "domaine public"/"public domain") é confiável.
 - **Schema da resposta da Gallica confirmado ao vivo** (não é mais suposição
   como era com a DDB) — mas só testado com uma busca (`Clavius`); outras
   buscas podem revelar campos ausentes que os testes ainda não cobrem.
@@ -64,9 +72,10 @@ dropdown de avaliação, no mesmo estilo do `Garimpo_GSM_MESTRE_VERIFICADO.xlsx`
 
 - `requests` para raspagem educada (Grand Sud e Gallica, via `ClienteEducado`,
   ambos sem API "oficial feita pra automação sem restrição").
-- Tradução híbrida: `deep-translator` (online, com 3 tentativas — o serviço
-  é instável na prática) com fallback automático pra `argostranslate`
-  (offline, pivô por inglês quando não há par direto, ex.: fr→en→pt).
+- Tradução em 3 camadas: Google Translate (3 tentativas, instável na prática)
+  → MyMemoryTranslator (3 tentativas, cobre idiomas sem pacote offline tipo
+  latim) → `argostranslate` offline (pivô por inglês quando não há par
+  direto, ex.: fr→en→pt, el→en→pt) → mantém o original se tudo falhar.
 - Empacotamento: pacote instalável de verdade (`pip install -e .`), não
   hack de `sys.path`.
 - Ver seções 3 e 7 do CLAUDE.md para o protocolo de decisões e a árvore de
