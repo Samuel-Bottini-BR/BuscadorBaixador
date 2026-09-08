@@ -189,6 +189,36 @@ def test_pagina_vazia_inesperada_pausa_e_tenta_de_novo(tmp_path):
     assert len(itens) == 4  # sem lacuna: a pagina que falhou foi buscada nova depois
 
 
+def test_falha_de_rede_pausa_e_tenta_de_novo(tmp_path):
+    """Regressao do caso real (2026-09-08): na rodada de verdade, depois de
+    ~35 mil itens, uma falha de conexao (timeout) derrubou o processo
+    inteiro -- numa coleta de dias, isso vai acontecer varias vezes, tem
+    que ser tratado como algo pra tentar de novo, nao como fim de tudo."""
+    diretorio_job = tmp_path / "job"
+    todos_registros = _registros_sinteticos(4)
+    ja_falhou = {"sim": False}
+
+    def get(url):
+        parametros = parse_qs(urlparse(url).query)
+        inicio = int(parametros["startRecord"][0])
+        quantidade = int(parametros["maximumRecords"][0])
+        if inicio == 3 and not ja_falhou["sim"]:
+            ja_falhou["sim"] = True
+            raise requests.exceptions.ConnectTimeout("timeout simulado de conexao")
+        return _resposta_pagina(todos_registros, inicio - 1, quantidade)
+
+    cliente = MagicMock()
+    cliente.get.side_effect = get
+    dormir_fake = MagicMock()
+
+    checkpoint = coletar(CONSULTA, diretorio_job, tamanho_pagina=2, cliente=cliente,
+                          cooldown_rede_segundos=45, dormir=dormir_fake)
+
+    dormir_fake.assert_called_once_with(45)
+    assert checkpoint.concluido is True
+    assert checkpoint.itens_gravados == 4
+
+
 def test_erro_que_nao_e_429_sobe_e_para_a_coleta(tmp_path):
     diretorio_job = tmp_path / "job"
     cliente = MagicMock()
