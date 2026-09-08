@@ -26,18 +26,20 @@ COOLDOWN_429_PADRAO_SEGUNDOS = 10 * 60
 COOLDOWN_PAGINA_VAZIA_PADRAO_SEGUNDOS = 30
 
 # Visto ao vivo (2026-09-08): depois de ~35 mil itens, um timeout de conexao
-# (rede caiu por um instante) derrubou o processo inteiro -- numa coleta de
-# dias, blips de rede (wifi, roteador, provedor) sao praticamente garantidos
-# de acontecer varias vezes. 60s e' um primeiro palpite pra dar tempo da
-# rede voltar sozinha; como a tentativa recomeca sempre do checkpoint, um
-# blip mais longo so significa mais ciclos de espera, nao perda de dado.
-COOLDOWN_REDE_PADRAO_SEGUNDOS = 60
+# (rede caiu por um instante) derrubou o processo inteiro; pouco depois, um
+# 500 do proprio servidor da Gallica fez o mesmo. Numa coleta de dias,
+# infraestrutura externa falhando por um instante (wifi, roteador, provedor,
+# ou o servidor da Gallica) e' praticamente garantido de acontecer varias
+# vezes -- tratamos os dois igual. 60s e' um primeiro palpite pra dar tempo
+# de se recuperar sozinho; como a tentativa recomeca sempre do checkpoint,
+# uma falha mais longa so significa mais ciclos de espera, nao perda de dado.
+COOLDOWN_INFRA_PADRAO_SEGUNDOS = 60
 
 
 def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_000_000,
             cooldown_429_segundos=COOLDOWN_429_PADRAO_SEGUNDOS,
             cooldown_pagina_vazia_segundos=COOLDOWN_PAGINA_VAZIA_PADRAO_SEGUNDOS,
-            cooldown_rede_segundos=COOLDOWN_REDE_PADRAO_SEGUNDOS,
+            cooldown_infra_segundos=COOLDOWN_INFRA_PADRAO_SEGUNDOS,
             cliente=None, dormir=time.sleep, progresso_fct=None):
     """Roda ou retoma a coleta bruta de uma consulta inteira. Para cada
     pagina confirmada: grava no CSV e SO DEPOIS avanca e salva o checkpoint
@@ -48,8 +50,11 @@ def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_00
     pausa por cooldown_429_segundos e recomeca do ultimo checkpoint salvo.
     Se uma pagina voltar vazia antes da hora (RespostaVaziaInesperadaError --
     falha temporaria da Gallica, nao o fim real da busca), pausa por
-    cooldown_pagina_vazia_segundos e faz o mesmo. Se a rede cair (timeout ou
-    erro de conexao), pausa por cooldown_rede_segundos e faz o mesmo."""
+    cooldown_pagina_vazia_segundos e faz o mesmo. Se a infraestrutura falhar
+    (rede: timeout/erro de conexao; ou servidor: 5xx), pausa por
+    cooldown_infra_segundos e faz o mesmo. So um 4xx que NAO seja 429 propaga
+    de verdade -- isso indica problema na nossa propria requisicao (consulta
+    mal formada, por exemplo), que tentar de novo pra sempre nao resolve."""
     diretorio_job.mkdir(parents=True, exist_ok=True)
     caminho_checkpoint = diretorio_job / "checkpoint.json"
     caminho_csv = diretorio_job / "itens.csv"
@@ -66,21 +71,28 @@ def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_00
             try:
                 _coletar_paginas_restantes(adapter, escritor, checkpoint, caminho_checkpoint, progresso_fct)
             except requests.HTTPError as erro:
-                if erro.response is not None and erro.response.status_code == 429:
+                codigo = erro.response.status_code if erro.response is not None else None
+                if codigo == 429:
                     print(f"429 persistente em startRecord={checkpoint.proximo_start_record}; "
                           f"pausando {cooldown_429_segundos}s antes de tentar de novo...")
                     dormir(cooldown_429_segundos)
                     continue
-                raise  # outros erros (5xx, DNS, timeout) sobem e param o processo -- ficam visiveis
+                if codigo is not None and codigo >= 500:
+                    print(f"Erro do servidor da Gallica ({codigo}) em startRecord="
+                          f"{checkpoint.proximo_start_record}; pausando {cooldown_infra_segundos}s "
+                          "antes de tentar de novo...")
+                    dormir(cooldown_infra_segundos)
+                    continue
+                raise  # 4xx que nao e' 429: problema na nossa requisicao, nao adianta tentar de novo
             except RespostaVaziaInesperadaError as erro:
                 print(f"{erro} Pausando {cooldown_pagina_vazia_segundos}s antes de tentar de novo...")
                 dormir(cooldown_pagina_vazia_segundos)
                 continue
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as erro:
                 print(f"Falha de rede ({erro.__class__.__name__}) em startRecord="
-                      f"{checkpoint.proximo_start_record}; pausando {cooldown_rede_segundos}s "
+                      f"{checkpoint.proximo_start_record}; pausando {cooldown_infra_segundos}s "
                       "antes de tentar de novo...")
-                dormir(cooldown_rede_segundos)
+                dormir(cooldown_infra_segundos)
                 continue
             checkpoint.concluido = True
             salvar(checkpoint, caminho_checkpoint)

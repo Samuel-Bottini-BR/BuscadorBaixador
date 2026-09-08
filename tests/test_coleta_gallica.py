@@ -212,17 +212,50 @@ def test_falha_de_rede_pausa_e_tenta_de_novo(tmp_path):
     dormir_fake = MagicMock()
 
     checkpoint = coletar(CONSULTA, diretorio_job, tamanho_pagina=2, cliente=cliente,
-                          cooldown_rede_segundos=45, dormir=dormir_fake)
+                          cooldown_infra_segundos=45, dormir=dormir_fake)
 
     dormir_fake.assert_called_once_with(45)
     assert checkpoint.concluido is True
     assert checkpoint.itens_gravados == 4
 
 
-def test_erro_que_nao_e_429_sobe_e_para_a_coleta(tmp_path):
+def test_erro_500_do_servidor_pausa_e_tenta_de_novo(tmp_path):
+    """Regressao do caso real (2026-09-08): a Gallica respondeu 500 (erro
+    dela, nao da nossa requisicao) e derrubava o processo. Igual a rede,
+    isso e' infraestrutura externa falhando por um instante -- deve pausar
+    e tentar de novo, nao propagar como se fosse um erro definitivo."""
+    diretorio_job = tmp_path / "job"
+    todos_registros = _registros_sinteticos(4)
+    ja_falhou = {"sim": False}
+
+    def get(url):
+        parametros = parse_qs(urlparse(url).query)
+        inicio = int(parametros["startRecord"][0])
+        quantidade = int(parametros["maximumRecords"][0])
+        if inicio == 3 and not ja_falhou["sim"]:
+            ja_falhou["sim"] = True
+            raise requests.HTTPError(response=SimpleNamespace(status_code=500))
+        return _resposta_pagina(todos_registros, inicio - 1, quantidade)
+
+    cliente = MagicMock()
+    cliente.get.side_effect = get
+    dormir_fake = MagicMock()
+
+    checkpoint = coletar(CONSULTA, diretorio_job, tamanho_pagina=2, cliente=cliente,
+                          cooldown_infra_segundos=45, dormir=dormir_fake)
+
+    dormir_fake.assert_called_once_with(45)
+    assert checkpoint.concluido is True
+    assert checkpoint.itens_gravados == 4
+
+
+def test_erro_4xx_que_nao_e_429_sobe_e_para_a_coleta(tmp_path):
+    """Um 4xx (exceto 429) indica problema na NOSSA requisicao (consulta mal
+    formada, por exemplo) -- tentar de novo pra sempre nunca resolveria
+    sozinho, entao isso continua propagando (precisa de um humano olhar)."""
     diretorio_job = tmp_path / "job"
     cliente = MagicMock()
-    cliente.get.side_effect = requests.HTTPError(response=SimpleNamespace(status_code=500))
+    cliente.get.side_effect = requests.HTTPError(response=SimpleNamespace(status_code=400))
 
     with pytest.raises(requests.HTTPError):
         coletar(CONSULTA, diretorio_job, tamanho_pagina=2, cliente=cliente)
