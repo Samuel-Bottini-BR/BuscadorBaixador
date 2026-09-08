@@ -137,6 +137,18 @@ def test_429_persistente_pausa_pelo_cooldown_e_tenta_de_novo(tmp_path):
     assert checkpoint.itens_gravados == 2
 
 
+def test_progresso_fct_e_chamado_uma_vez_por_pagina(tmp_path):
+    diretorio_job = tmp_path / "job"
+    cliente = _cliente_para_total(5)
+    progresso_fct = MagicMock()
+
+    coletar(CONSULTA, diretorio_job, tamanho_pagina=2, cliente=cliente, progresso_fct=progresso_fct)
+
+    assert progresso_fct.call_count == 3  # paginas de 2, 2, 1
+    ultimo_checkpoint = progresso_fct.call_args_list[-1].args[0]
+    assert ultimo_checkpoint.itens_gravados == 5
+
+
 def test_erro_que_nao_e_429_sobe_e_para_a_coleta(tmp_path):
     diretorio_job = tmp_path / "job"
     cliente = MagicMock()

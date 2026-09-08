@@ -20,7 +20,8 @@ COOLDOWN_429_PADRAO_SEGUNDOS = 10 * 60
 
 
 def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_000_000,
-            cooldown_429_segundos=COOLDOWN_429_PADRAO_SEGUNDOS, cliente=None, dormir=time.sleep):
+            cooldown_429_segundos=COOLDOWN_429_PADRAO_SEGUNDOS, cliente=None, dormir=time.sleep,
+            progresso_fct=None):
     """Roda ou retoma a coleta bruta de uma consulta inteira. Para cada
     pagina confirmada: grava no CSV e SO DEPOIS avanca e salva o checkpoint
     -- nessa ordem, o pior caso de uma interrupcao e repetir 1 pagina no
@@ -42,7 +43,7 @@ def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_00
                 tamanho_pagina=tamanho_pagina, startrecord_inicial=checkpoint.proximo_start_record,
             )
             try:
-                _coletar_paginas_restantes(adapter, escritor, checkpoint, caminho_checkpoint)
+                _coletar_paginas_restantes(adapter, escritor, checkpoint, caminho_checkpoint, progresso_fct)
             except requests.HTTPError as erro:
                 if erro.response is not None and erro.response.status_code == 429:
                     print(f"429 persistente em startRecord={checkpoint.proximo_start_record}; "
@@ -55,7 +56,7 @@ def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_00
     return checkpoint
 
 
-def _coletar_paginas_restantes(adapter, escritor, checkpoint, caminho_checkpoint):
+def _coletar_paginas_restantes(adapter, escritor, checkpoint, caminho_checkpoint, progresso_fct):
     for inicio_pagina, itens_pagina in adapter.iter_paginas():
         escritor.escrever_pagina(itens_pagina)
         checkpoint.proximo_start_record = inicio_pagina + len(itens_pagina)
@@ -63,3 +64,5 @@ def _coletar_paginas_restantes(adapter, escritor, checkpoint, caminho_checkpoint
         if adapter.total_ultima_busca is not None:
             checkpoint.total_registros_api = adapter.total_ultima_busca
         salvar(checkpoint, caminho_checkpoint)
+        if progresso_fct is not None:
+            progresso_fct(checkpoint)
