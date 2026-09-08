@@ -44,6 +44,7 @@ class GallicaAdapter(SiteAdapter):
         self.max_resultados = max_resultados
         self.tamanho_pagina = min(tamanho_pagina, MAXIMO_POR_PAGINA)
         self.startrecord_inicial = startrecord_inicial  # permite retomar de onde parou (coleta longa)
+        self.total_ultima_busca = None  # numberOfRecords da ultima chamada -- so informativo
 
     def iter_itens(self):
         for _inicio_pagina, itens_pagina in self.iter_paginas():
@@ -60,6 +61,7 @@ class GallicaAdapter(SiteAdapter):
             raiz = self._buscar_pagina(inicio, self.tamanho_pagina)
             if total is None:
                 total = _texto_como_int(raiz, "numberOfRecords")
+                self.total_ultima_busca = total
             registros = _elementos_por_nome_local(raiz, "record")
             if not registros:
                 return
