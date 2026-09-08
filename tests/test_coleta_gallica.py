@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 import requests
 
+from buscador.adapters.gallica import RespostaVaziaInesperadaError
 from buscador.core.checkpoint import carregar_ou_criar
 from buscador.core.coleta_csv import carregar_itens_csv
 from buscador.core.coleta_gallica import coletar
@@ -147,6 +148,45 @@ def test_progresso_fct_e_chamado_uma_vez_por_pagina(tmp_path):
     assert progresso_fct.call_count == 3  # paginas de 2, 2, 1
     ultimo_checkpoint = progresso_fct.call_args_list[-1].args[0]
     assert ultimo_checkpoint.itens_gravados == 5
+
+
+def test_pagina_vazia_inesperada_pausa_e_tenta_de_novo(tmp_path):
+    """Regressao do caso real (2026-09-08): pagina no meio da busca voltou
+    vazia mesmo com o total declarado ainda nao alcancado. Nao pode virar
+    'concluido' -- tem que pausar e tentar de novo do mesmo startRecord."""
+    diretorio_job = tmp_path / "job"
+    todos_registros = _registros_sinteticos(4)
+    ja_falhou = {"sim": False}
+
+    def get(url):
+        parametros = parse_qs(urlparse(url).query)
+        inicio = int(parametros["startRecord"][0])
+        quantidade = int(parametros["maximumRecords"][0])
+        if inicio == 3 and not ja_falhou["sim"]:
+            ja_falhou["sim"] = True
+            resposta = MagicMock()
+            resposta.text = (
+                '<srw:searchRetrieveResponse xmlns:srw="http://www.loc.gov/zing/srw/">'
+                "<srw:numberOfRecords>4</srw:numberOfRecords>"
+                "<srw:records></srw:records>"
+                "</srw:searchRetrieveResponse>"
+            )
+            return resposta
+        return _resposta_pagina(todos_registros, inicio - 1, quantidade)
+
+    cliente = MagicMock()
+    cliente.get.side_effect = get
+    dormir_fake = MagicMock()
+
+    checkpoint = coletar(CONSULTA, diretorio_job, tamanho_pagina=2, cliente=cliente,
+                          cooldown_pagina_vazia_segundos=15, dormir=dormir_fake)
+
+    dormir_fake.assert_called_once_with(15)
+    assert checkpoint.concluido is True
+    assert checkpoint.itens_gravados == 4
+
+    itens = carregar_itens_csv(diretorio_job / "itens.csv")
+    assert len(itens) == 4  # sem lacuna: a pagina que falhou foi buscada nova depois
 
 
 def test_erro_que_nao_e_429_sobe_e_para_a_coleta(tmp_path):

@@ -26,6 +26,15 @@ MAXIMO_POR_PAGINA = 50  # limite documentado pela BnF
 _TERMOS_DOMINIO_PUBLICO = ("domaine public", "domaine publique", "public domain")
 
 
+class RespostaVaziaInesperadaError(Exception):
+    """Uma pagina no meio da busca voltou sem nenhum registro, mesmo o
+    startRecord pedido ainda sendo menor ou igual ao total que a propria
+    Gallica declarou -- quase certo que e' uma falha temporaria dela, nao o
+    fim real da busca (visto ao vivo: tentar de novo na hora resolveu).
+    Quem chama (core/coleta_gallica.py) deve tratar isso como algo pra
+    tentar de novo, nunca como 'terminou'."""
+
+
 class GallicaAdapter(SiteAdapter):
     nome = "Gallica (BnF)"
 
@@ -64,7 +73,12 @@ class GallicaAdapter(SiteAdapter):
                 self.total_ultima_busca = total
             registros = _elementos_por_nome_local(raiz, "record")
             if not registros:
-                return
+                if total == 0 or inicio > total:
+                    return  # fim real: ou a busca nao tem nenhum resultado, ou passamos do total
+                raise RespostaVaziaInesperadaError(
+                    f"Pagina em startRecord={inicio} veio vazia, mas o total declarado e' "
+                    f"{total} (ou seja, ainda deveria ter registro aqui)."
+                )
             itens_pagina = [self._item_de_registro(registro) for registro in registros]
             yield inicio, itens_pagina
             inicio += len(registros)

@@ -4,7 +4,9 @@ import xml.etree.ElementTree as ET
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlparse
 
-from buscador.adapters.gallica import GallicaAdapter, MAXIMO_POR_PAGINA
+import pytest
+
+from buscador.adapters.gallica import GallicaAdapter, MAXIMO_POR_PAGINA, RespostaVaziaInesperadaError
 
 FIXTURE_PATH = pathlib.Path(__file__).parent / "fixtures" / "gallica" / "busca_clavius.xml"
 FIXTURE_TEXTO = FIXTURE_PATH.read_text(encoding="utf-8")
@@ -147,6 +149,47 @@ def test_iter_paginas_com_paginacao_real_marca_o_inicio_certo_por_pagina():
 
     assert [inicio for inicio, _itens in paginas] == [1, 3]
     assert [len(itens) for _inicio, itens in paginas] == [2, 1]
+
+
+def test_pagina_vazia_antes_do_total_levanta_erro_em_vez_de_parar_silenciosamente():
+    """Regressao: numa coleta real, a pagina 6 voltou com 0 registros mesmo o
+    startRecord pedido sendo bem menor que o total declarado (933235) --
+    quase certo que foi uma falha temporaria da Gallica (tentar de novo na
+    hora funcionou normal), nao o fim real da busca. Isso nao pode virar
+    'terminou' silenciosamente: precisa virar um erro pra quem chama decidir
+    tentar de novo (ver coleta_gallica.py)."""
+    def registro_xml(titulo):
+        return (
+            "<srw:record><srw:recordData>"
+            '<oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" '
+            'xmlns:dc="http://purl.org/dc/elements/1.1/">'
+            f"<dc:title>{titulo}</dc:title></oai_dc:dc>"
+            "</srw:recordData></srw:record>"
+        )
+
+    def resposta_com(numero_de_records_declarado, registros_xml):
+        return _resposta(
+            '<srw:searchRetrieveResponse xmlns:srw="http://www.loc.gov/zing/srw/">'
+            f"<srw:numberOfRecords>{numero_de_records_declarado}</srw:numberOfRecords>"
+            f"<srw:records>{registros_xml}</srw:records>"
+            "</srw:searchRetrieveResponse>"
+        )
+
+    chamadas = {"n": 0}
+
+    def get(url):
+        chamadas["n"] += 1
+        if chamadas["n"] == 1:
+            return resposta_com(100, registro_xml("Primeiro item"))
+        return resposta_com(100, "")  # pagina vazia, mas so pedimos o 2o de 100
+
+    cliente = MagicMock()
+    cliente.get.side_effect = get
+
+    adapter = GallicaAdapter("consulta qualquer", cliente=cliente, tamanho_pagina=1)
+
+    with pytest.raises(RespostaVaziaInesperadaError):
+        list(adapter.iter_paginas())
 
 
 def test_sem_resultados_nao_quebra():

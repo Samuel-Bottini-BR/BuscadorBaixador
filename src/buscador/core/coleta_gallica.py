@@ -8,7 +8,7 @@ import time
 
 import requests
 
-from buscador.adapters.gallica import GallicaAdapter
+from buscador.adapters.gallica import GallicaAdapter, RespostaVaziaInesperadaError
 from buscador.core.checkpoint import carregar_ou_criar, salvar
 from buscador.core.coleta_csv import EscritorCsvIncremental
 
@@ -18,17 +18,28 @@ from buscador.core.coleta_csv import EscritorCsvIncremental
 # e um primeiro palpite pra recalibrar depois do primeiro teste real longo.
 COOLDOWN_429_PADRAO_SEGUNDOS = 10 * 60
 
+# Visto ao vivo (2026-09-08): uma pagina no meio de uma coleta real voltou
+# vazia por uma falha temporaria da Gallica -- tentar de novo alguns minutos
+# depois, manualmente, resolveu em segundos. 30s e' um primeiro palpite bem
+# mais curto que o do 429 (que e' sobre cota esgotada, um problema diferente
+# e mais demorado de resolver) -- recalibrar se isso se repetir com frequencia.
+COOLDOWN_PAGINA_VAZIA_PADRAO_SEGUNDOS = 30
+
 
 def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_000_000,
-            cooldown_429_segundos=COOLDOWN_429_PADRAO_SEGUNDOS, cliente=None, dormir=time.sleep,
-            progresso_fct=None):
+            cooldown_429_segundos=COOLDOWN_429_PADRAO_SEGUNDOS,
+            cooldown_pagina_vazia_segundos=COOLDOWN_PAGINA_VAZIA_PADRAO_SEGUNDOS,
+            cliente=None, dormir=time.sleep, progresso_fct=None):
     """Roda ou retoma a coleta bruta de uma consulta inteira. Para cada
     pagina confirmada: grava no CSV e SO DEPOIS avanca e salva o checkpoint
     -- nessa ordem, o pior caso de uma interrupcao e repetir 1 pagina no
     proximo carregar_itens_csv (que ja descarta duplicata por link), nunca
     perder uma pagina inteira. Se um 429 sobreviver as tentativas do
     ClienteEducado (cota esgotada, nao so intervalo curto entre chamadas),
-    pausa por cooldown_429_segundos e recomeca do ultimo checkpoint salvo."""
+    pausa por cooldown_429_segundos e recomeca do ultimo checkpoint salvo.
+    Se uma pagina voltar vazia antes da hora (RespostaVaziaInesperadaError --
+    falha temporaria da Gallica, nao o fim real da busca), pausa por
+    cooldown_pagina_vazia_segundos e faz o mesmo."""
     diretorio_job.mkdir(parents=True, exist_ok=True)
     caminho_checkpoint = diretorio_job / "checkpoint.json"
     caminho_csv = diretorio_job / "itens.csv"
@@ -51,6 +62,10 @@ def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_00
                     dormir(cooldown_429_segundos)
                     continue
                 raise  # outros erros (5xx, DNS, timeout) sobem e param o processo -- ficam visiveis
+            except RespostaVaziaInesperadaError as erro:
+                print(f"{erro} Pausando {cooldown_pagina_vazia_segundos}s antes de tentar de novo...")
+                dormir(cooldown_pagina_vazia_segundos)
+                continue
             checkpoint.concluido = True
             salvar(checkpoint, caminho_checkpoint)
     return checkpoint
