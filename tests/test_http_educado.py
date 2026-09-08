@@ -47,3 +47,32 @@ def test_levanta_erro_em_status_ruim():
             assert False, "deveria ter levantado"
         except Exception as e:
             assert str(e) == "erro http"
+
+
+def test_retenta_em_429_antes_de_desistir():
+    resposta_429 = MagicMock(status_code=429, headers={"Retry-After": "1"})
+    resposta_ok = MagicMock(status_code=200)
+    cliente = ClienteEducado("UA-teste")
+    with patch("buscador.core.http_educado.requests.get", side_effect=[resposta_429, resposta_ok]), \
+         patch("buscador.core.http_educado.time.sleep") as sleep_mock:
+        resultado = cliente.get("https://exemplo.com")
+    assert resultado is resposta_ok
+    sleep_mock.assert_any_call(1.0)
+
+
+def test_desiste_apos_todas_as_tentativas_em_429():
+    resposta_429 = MagicMock(status_code=429, headers={})
+    resposta_429.raise_for_status.side_effect = Exception("429 sempre")
+    cliente = ClienteEducado("UA-teste")
+    with patch("buscador.core.http_educado.requests.get", return_value=resposta_429) as get_mock, \
+         patch("buscador.core.http_educado.time.sleep") as sleep_mock:
+        try:
+            cliente.get("https://exemplo.com")
+            assert False, "deveria ter levantado"
+        except Exception as e:
+            assert str(e) == "429 sempre"
+    assert get_mock.call_count == ClienteEducado.TENTATIVAS_429
+    # espera padrao (sem Retry-After) dobrando a cada nova tentativa: 5s, 10s, 20s
+    sleep_mock.assert_any_call(5.0)
+    sleep_mock.assert_any_call(10.0)
+    sleep_mock.assert_any_call(20.0)

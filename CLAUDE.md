@@ -76,8 +76,8 @@ Para cada site, decida **como** acessar, nesta ordem, **me avisando da escolha**
 - **Adaptadores de site** (para reuso): uma interface base `SiteAdapter`
   (`iter_itens()`, `descrever(item)`), um adaptador **genérico** (varre páginas e
   acha links/PDFs), e adaptadores **específicos** quando o site tem estrutura própria
-  (ex.: fórum phpBB como o Grand Sud) ou API (ex.: `ZvddAdapter`). Adicionar um site
-  novo = escrever um adaptador novo, sem mexer no resto.
+  (ex.: fórum phpBB como o Grand Sud) ou API (ex.: `GallicaAdapter`). Adicionar um
+  site novo = escrever um adaptador novo, sem mexer no resto.
 - **Reaproveitar o `verificar_links.py`** que já existe na pasta (testa
   vivo/quebrado/login/PDF): vire um módulo do motor.
 - **Estrutura de pastas sugerida** (proponha e ajuste comigo):
@@ -217,18 +217,33 @@ Além disso, o próprio projeto zvdd está sendo desativado desde 2024 por decis
 DFG (a agência alemã que o financiava), que recomenda migrar para a **Deutsche
 Digitale Bibliothek (DDB)** como sucessora oficial.
 
-**Novo caso de teste: Deutsche Digitale Bibliothek (DDB)** —
-`https://www.deutsche-digitale-bibliothek.de/`, com API REST pública e documentada
-(`https://api.deutsche-digitale-bibliothek.de/`), feita para automação (exige
-cadastro gratuito "Meine DDB" para gerar uma chave — nunca hardcoded no código).
-Autor de teste: **"Christophori Clavii"**. Confirmamos por busca real que a DDB tem
-acervo equivalente: **163 resultados** para esse autor (Algebra, Geometria Practica,
-Epitome Arithmeticae Practicae, Astrolabium, séc. XVI-XVII). Localizamos também um
-exemplo concreto no zvdd (`PPN309056772`, "Opervm Mathematicorvm" Tomo 2, Mainz 1611,
-digitalizado pela SUB Göttingen) cujo conteúdo bate tematicamente com títulos já
-vistos na DDB — mas a confirmação item-a-item exata não foi possível: a DDB tem uma
-proteção anti-robô (desafio JS) que bloqueia páginas de organização/item e a própria
-API sem chave (`NotAuthorizedException`). Isso fica pendente até termos a chave.
+**Segundo caso de teste (API): Deutsche Digitale Bibliothek (DDB)** — tentamos
+primeiro. Tem API REST pública e documentada, mas **exige cadastro** ("Meine DDB")
+para gerar uma chave, e o formulário de cadastro (`/user/apikey/request`) deu erro
+400 persistente ("Request-Parameter nicht wie erwartet") em várias tentativas
+(navegador normal, anônimo, contas diferentes) — parece bug do lado deles. Depois
+de muito tempo tentando contornar isso, **trocamos para a Gallica** (abaixo). O
+código da DDB (`adapters/ddb.py`, `core/config.py`) foi **removido** do projeto — se
+um dia a chave da DDB funcionar, pode valer reconstruir o adaptador (o padrão de
+`GallicaAdapter` serve de modelo), mas não é prioridade agora.
+
+**Caso de teste atual (API): Gallica (BnF)** — `https://gallica.bnf.fr/SRU`, API
+SRU oficial e documentada em `api.bnf.fr`, **sem chave**. Confirmado por teste real
+do Samuel (não só documentação): funciona com
+`operation=searchRetrieve&version=1.2&query=<CQL>&maximumRecords=<0-50>&startRecord=<N>`,
+resposta em XML Dublin Core (`dc:title`, `dc:creator`/`dc:contributor`, `dc:date`,
+`dc:language`, `dc:publisher`, `dc:description`, `dc:rights` → coluna
+`dominio_publico`, `dc:identifier`/`<link>` → coluna `link`, `<typedoc>` → tipo).
+**Atenção de robots.txt:** o `robots.txt` da Gallica tem uma regra ampla
+(`Disallow: /*?`) que, lida ao pé da letra, bloquearia qualquer URL com "?" —
+inclusive a do SRU. Concluímos que essa regra mira as páginas de busca do site
+comum, não a API oficial (confirmado por `api.bnf.fr` documentar exatamente essa
+URL para uso por terceiros) — mas fica registrado que é uma leitura, não uma
+certeza absoluta. **Rate limit descoberto na prática:** a Gallica devolve 429 (Too
+Many Requests) entre páginas com intervalo menor que ~6s — `GallicaAdapter` usa um
+intervalo maior que o padrão do `ClienteEducado`, e o `ClienteEducado` agora tenta
+de novo automaticamente em 429 (espera dobrando: 5s/10s/20s) antes de desistir.
+Autor de teste: **"Clavius"**. zvdd.de continua descartado (ver abaixo).
 
 **zvdd.de fica anotado como adaptador futuro, opcional, só por PPN manual:** como o
 zvdd não permite nenhuma forma de descoberta automatizada, um eventual adaptador para

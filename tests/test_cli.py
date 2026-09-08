@@ -4,7 +4,7 @@ from openpyxl import load_workbook
 
 from buscador import cli
 from buscador.adapters.base import Item
-from buscador.adapters.ddb import DdbAdapter
+from buscador.adapters.gallica import GallicaAdapter
 
 
 class AdapterFake:
@@ -23,34 +23,27 @@ def test_escolher_adapter_por_dominio():
     assert cli.escolher_adapter(url) == "phpbb"
 
 
-def test_escolher_adapter_ddb_por_dominio():
-    url = "https://www.deutsche-digitale-bibliothek.de/searchresults?query=Christophori+Clavii"
-    assert cli.escolher_adapter(url) == "ddb"
+def test_escolher_adapter_gallica_por_dominio():
+    url = 'https://gallica.bnf.fr/SRU?operation=searchRetrieve&version=1.2&query=gallica all "Clavius"'
+    assert cli.escolher_adapter(url) == "gallica"
 
 
-def test_extrair_consulta_ddb_de_url_de_busca():
-    url = "https://www.deutsche-digitale-bibliothek.de/searchresults?query=Christophori+Clavii"
-    assert cli._extrair_consulta_ddb(url) == "Christophori Clavii"
+def test_extrair_consulta_gallica_de_url_de_busca():
+    url = "https://gallica.bnf.fr/SRU?operation=searchRetrieve&version=1.2&query=Christophori+Clavii"
+    assert cli._extrair_consulta_gallica(url) == "Christophori Clavii"
 
 
-def test_extrair_consulta_ddb_texto_direto():
-    assert cli._extrair_consulta_ddb("Christophori Clavii") == "Christophori Clavii"
+def test_extrair_consulta_gallica_texto_direto():
+    assert cli._extrair_consulta_gallica('gallica all "Clavius"') == 'gallica all "Clavius"'
 
 
 def test_escolher_adapter_forcado_tem_prioridade():
-    assert cli.escolher_adapter("https://qualquer-site.com", forcado="ddb") == "ddb"
+    assert cli.escolher_adapter("https://qualquer-site.com", forcado="gallica") == "gallica"
 
 
 def test_escolher_adapter_domino_desconhecido_levanta_erro():
     with pytest.raises(ValueError):
         cli.escolher_adapter("https://site-nao-cadastrado.com")
-
-
-def test_main_sem_chave_da_ddb_mostra_mensagem_amigavel(monkeypatch, capsys):
-    monkeypatch.delenv("DDB_API_KEY", raising=False)
-    codigo = cli.main(["Christophori Clavii", "--adapter", "ddb"])
-    assert codigo == 1
-    assert "Cadastre-se de graça" in capsys.readouterr().out
 
 
 def test_main_dominio_desconhecido_mostra_mensagem_amigavel(capsys):
@@ -59,10 +52,9 @@ def test_main_dominio_desconhecido_mostra_mensagem_amigavel(capsys):
     assert "Não deu para continuar" in capsys.readouterr().out
 
 
-def test_construir_adapter_ddb(monkeypatch):
-    monkeypatch.setenv("DDB_API_KEY", "chave-teste")
-    adapter = cli.construir_adapter("ddb", "Christophori Clavii")
-    assert isinstance(adapter, DdbAdapter)
+def test_construir_adapter_gallica():
+    adapter = cli.construir_adapter("gallica", "Christophori Clavii")
+    assert isinstance(adapter, GallicaAdapter)
     assert adapter.consulta == "Christophori Clavii"
 
 

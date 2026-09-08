@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<srw:searchRetrieveResponse xmlns:srw="http://www.loc.gov/zing/srw/">
+  <srw:version>1.2</srw:version>
+  <srw:numberOfRecords>3</srw:numberOfRecords>
+  <srw:records>
+    <srw:record>
+      <srw:recordSchema>dc</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <dc:title>Algebra Christophori Clavii</dc:title>
+          <dc:creator>Clavius, Christophorus (1538-1612)</dc:creator>
+          <dc:date>1608</dc:date>
+          <dc:language>lat</dc:language>
+          <dc:publisher>Bibliothèque nationale de France</dc:publisher>
+          <dc:description>Ouvrage numérisé, fonds ancien</dc:description>
+          <dc:subject>Mathématiques</dc:subject>
+          <dc:rights>domaine public</dc:rights>
+          <dc:identifier>ark:/12148/bpt6k83058n</dc:identifier>
+        </oai_dc:dc>
+      </srw:recordData>
+      <srw:extraRecordData>
+        <link>https://gallica.bnf.fr/ark:/12148/bpt6k83058n</link>
+        <typedoc>monographie</typedoc>
+      </srw:extraRecordData>
+      <srw:recordPosition>1</srw:recordPosition>
+    </srw:record>
+    <srw:record>
+      <srw:recordSchema>dc</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <dc:title>Geometria practica</dc:title>
+          <dc:contributor>Clavius, Christophorus (1538-1612)</dc:contributor>
+          <dc:date>1604</dc:date>
+          <dc:language>lat</dc:language>
+          <dc:publisher>Bibliothèque nationale de France</dc:publisher>
+          <dc:description>Traité de géométrie</dc:description>
+          <dc:subject>Géométrie</dc:subject>
+          <dc:rights>public domain</dc:rights>
+          <dc:identifier>ark:/12148/bpt6k99999x</dc:identifier>
+        </oai_dc:dc>
+      </srw:recordData>
+      <srw:extraRecordData>
+        <link>https://gallica.bnf.fr/ark:/12148/bpt6k99999x</link>
+        <typedoc>monographie</typedoc>
+      </srw:extraRecordData>
+      <srw:recordPosition>2</srw:recordPosition>
+    </srw:record>
+    <srw:record>
+      <srw:recordSchema>dc</srw:recordSchema>
+      <srw:recordPacking>xml</srw:recordPacking>
+      <srw:recordData>
+        <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <dc:title>Correspondance sur les travaux de Clavius (étude moderne)</dc:title>
+          <dc:creator>Dupont, Jean (1950-....)</dc:creator>
+          <dc:date>1998</dc:date>
+          <dc:language>fre</dc:language>
+          <dc:publisher>Revue d'histoire des sciences</dc:publisher>
+          <dc:description>Article critique sous droits</dc:description>
+          <dc:subject>Histoire des sciences</dc:subject>
+          <dc:rights>Consultable sous conditions - droits réservés</dc:rights>
+          <dc:identifier>ark:/12148/bpt6k11111z</dc:identifier>
+        </oai_dc:dc>
+      </srw:recordData>
+      <srw:extraRecordData>
+        <link>https://gallica.bnf.fr/ark:/12148/bpt6k11111z</link>
+        <typedoc>fascicule</typedoc>
+      </srw:extraRecordData>
+      <srw:recordPosition>3</srw:recordPosition>
+    </srw:record>
+  </srw:records>
+</srw:searchRetrieveResponse>
