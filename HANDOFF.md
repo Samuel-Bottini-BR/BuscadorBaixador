@@ -24,8 +24,8 @@ dropdown de avaliação, no mesmo estilo do `Garimpo_GSM_MESTRE_VERIFICADO.xlsx`
   links de `gallica.bnf.fr` reconhecidos como repositório.
 
 - Repositório: https://github.com/Samuel-Bottini-BR/BuscadorBaixador
-  (branch de trabalho: `feat/fase1-mapeador`, ~18 commits, `pytest` passando
-  a cada um — 61 testes no total).
+  (branch de trabalho: `feat/fase1-mapeador`, commit mais recente `6e3f4d2`,
+  `pytest` passando a cada commit — 64 testes no total).
 - Pacote Python instalável (`pyproject.toml`, `src/buscador/`), `.venv` com
   Python 3.12 (instalado à parte do 3.14 global, por causa do `argostranslate`).
 - `PhpbbAdapter` (fórum, com paginação) e `GallicaAdapter` (API SRU da BnF,
@@ -68,6 +68,31 @@ dropdown de avaliação, no mesmo estilo do `Garimpo_GSM_MESTRE_VERIFICADO.xlsx`
 - **`_extrair_titulo_topico` do PhpbbAdapter** usa `h2 a` — confirmado contra
   duas fixtures reais, mas só foi testado no layout atual do fórum.
 
+## Pergunta em aberto (retomar exatamente aqui)
+
+Samuel pediu "vamos mapear o site inteiro, primeiro" — depois de idas e vindas
+(pensei que fosse o fórum Grand Sud; era sobre a **Gallica**), chegamos a:
+a busca `"gallica all Clavius"` que rodamos tem **9739 resultados no total**
+(`<srw:numberOfRecords>9739</srw:numberOfRecords>`, confirmado no XML cru),
+não só os 50 da primeira página que processamos. A pergunta exata que ficou
+sem resposta (a última pergunta que fiz, ele interrompeu antes de responder):
+
+> A busca 'gallica all Clavius' tem 9739 resultados no total. Você quer dizer:
+> mapear TODOS os 9739 resultados dessa busca específica sobre Clavius? (Se
+> sim, são ~195 páginas de 50, respeitando o intervalo educado — e a busca
+> "all" da Gallica é frouxa, traz bastante ruído tipo jornais franceses do
+> séc. XIX que só citam Clavius de passagem.) Ou "o site inteiro" era outra
+> ideia — nesse caso, perguntar o que ele quer buscar/mapear de verdade.
+
+**Antes de implementar isso:** se for mesmo "todos os 9739", pensar em: (a)
+como isso interage com o rate limit por cota da Gallica (ver pendência
+abaixo) — 195 páginas seguidas provavelmente estoura o limite, precisa de um
+intervalo bem maior entre páginas ou rodar em lotes ao longo de várias horas;
+(b) vale a pena refinar a consulta CQL antes (`gallica adj "Christophori
+Clavii"` ou algo mais estrito) para reduzir o ruído, em vez de aceitar os
+9739 brutos — isso é uma decisão de trade-off pra apresentar ao Samuel
+(seção 3 do CLAUDE.md), não decidir sozinho.
+
 ## Decisões fechadas
 
 - `requests` para raspagem educada (Grand Sud e Gallica, via `ClienteEducado`,
@@ -87,6 +112,15 @@ dropdown de avaliação, no mesmo estilo do `Garimpo_GSM_MESTRE_VERIFICADO.xlsx`
   interromper por erro real ou decisão genuína) — combinado verbalmente,
   **não** alterado no CLAUDE.md ainda. Perguntar se vale formalizar isso lá
   antes da próxima fase.
+- **Comando `/checkpoint` criado** (`C:\Users\fotog\.claude\commands\checkpoint.md`,
+  fora deste repo — vale pra todos os projetos do Samuel). Atualiza o handoff,
+  roda testes, comita/envia, e avisa quando é seguro `/clear`. Regra de quando
+  eu devo sugerir isso sozinho está na seção "Checkpoint de contexto" do
+  `CLAUDE.md`. **Nota:** `/clear` é uma ação do terminal, não algo que eu
+  consigo acionar sozinho de dentro do comando — só aviso, o Samuel roda.
+  Os outros 3 projetos (EditorImpressao, BREVIARIO, transcritor-bilingue)
+  ainda não têm essa nota nos respectivos CLAUDE.md/handoff — perguntei se
+  valia adicionar lá também, sem resposta ainda.
 
 ## O que falta (próximas fases, ver CLAUDE.md seção 10)
 
