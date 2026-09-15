@@ -143,22 +143,50 @@ sabia):**
 instalar nada** (confirmado nesta sessão, não são novidade mas o handoff
 não citava): `beautifulsoup4` 4.15.0, `openpyxl` 3.1.5.
 
-## Pergunta em aberto (retomar exatamente aqui)
+## Padrão de planilha aprovado em 15/09/2026 (retomar exatamente aqui)
 
-A última coisa que perguntei, sem resposta ainda:
+Samuel pediu 3 versões de teste de como organizar a planilha de 46.222 itens
+(ele reclamou que a versão de uma aba só, sem tradução, "fica muito
+bagunçado"). Fiz uma amostra pequena (24 itens, 4 categorias) traduzida de
+verdade, e gerei 3 layouts:
 
-> Isso fecha o que você pediu. Quer que eu construa isso como adaptador de
-> verdade no projeto agora (parte do pacote `buscador`, com testes), ou
-> prefere revisar as planilhas primeiro?
+1. Uma aba por categoria, tabela simples.
+2. Aba "Índice" (categoria + quantidade + link clicável pra cada aba) + uma
+   aba por categoria.
+3. Uma aba só, com linha de cabeçalho colorida antes de cada bloco de
+   categoria, linhas agrupadas (outline do Excel, recolhe/expande).
 
-("isso" = o mapeamento por curadoria editorial de 46.222 itens.)
+**Samuel aprovou a versão 2 — "índice + abas por categoria". Esse é o
+padrão de planilha do projeto a partir de agora**, pelo menos para
+coleções grandes tipo esta.
 
-**Antes de responder essa pergunta**, vale decidir a de cima primeiro,
-porque muda tudo: **retomar a coleta SRU de "todos os monographie" (33%
-feita, achado neste checkpoint) resolve melhor o "quero tudo" do que
-transformar o script de curadoria num adapter?** Ou as duas coisas servem
-a propósitos diferentes (curadoria = descoberta guiada por tema; SRU =
-completude bruta) e vale manter as duas linhas de trabalho?
+**Scripts salvos no repositório** (`scripts/`, fora do pacote `buscador`,
+ainda sem teste):
+- `categorizar_amostra_gallica.py` — recategoriza por palavra-chave (os
+  "baldes" no topo do arquivo) e traduz uma amostra. **Ainda é rascunho**:
+  na rodada de teste só 4 dos 8 baldes pegaram itens (Quadrinhos,
+  Manuscritos Medievais, Religião e Teologia, Referência) — os outros 4
+  (Ciências, Paris, Literatura Clássica, Traduções) ficaram vazios, porque
+  a trilha "categoria" de `gallica_mapa_livros.json` é contaminada (ver
+  achado logo acima) e a ordem dos baldes decide qual palavra-chave vence
+  quando várias aparecem na mesma trilha. Precisa de ajuste fino antes de
+  rodar nos 46.222 itens de verdade.
+- `gerar_planilha_padrao_gallica.py` — monta a planilha no formato
+  aprovado (índice + abas) a partir da saída do script acima. Roda hoje só
+  em cima da amostra pequena.
+- Saídas de teste em `saidas/` (gitignored): `TESTE_versao1_...xlsx`,
+  `TESTE_versao2_...xlsx` (o padrão aprovado, em miniatura),
+  `TESTE_versao3_...xlsx`, `amostra_categorizada_traduzida.json`.
+
+**Próximo passo recomendado:** para gerar a planilha final com os 46.222
+itens de verdade, faltam duas coisas, nesta ordem:
+1. Refinar os baldes de `categorizar_amostra_gallica.py` até a distribuição
+   fazer sentido (hoje 2 baldes sozinhos comeriam quase tudo).
+2. Traduzir os 46.222 títulos **em lotes retomáveis**, não numa chamada só
+   — o Google Translate já se mostrou sensível a rate limit nesta própria
+   sessão (recusou toda vez, caiu pro MyMemory) mesmo com só 24 chamadas.
+   Vale reaproveitar o padrão de `core/enriquecimento_lote.py` (já existe
+   no projeto, feito pra isso) em vez de escrever um laço novo do zero.
 
 ## Pendências conhecidas (não bloqueiam, mas valem nota)
 
