@@ -7,6 +7,7 @@ import argparse
 import shutil
 from pathlib import Path
 
+from buscador.core.acao_humana import AcaoHumanaNecessaria, formatar_aviso
 from buscador.core.checkpoint import ConsultaDivergenteError, slug_consulta
 from buscador.core.coleta_gallica import COOLDOWN_429_PADRAO_SEGUNDOS, coletar
 
@@ -70,6 +71,10 @@ def main(argv=None):
         )
     except ConsultaDivergenteError as erro:
         print(f"Não deu para continuar: {erro}")
+        return 1
+    except AcaoHumanaNecessaria as erro:
+        print(formatar_aviso(erro))
+        print(f"O progresso ja salvo continua em {diretorio_job} -- rode este comando de novo depois de resolver.")
         return 1
 
     print(f"Coleta concluída: {checkpoint.itens_gravados} itens salvos em {diretorio_job / 'itens.csv'}")

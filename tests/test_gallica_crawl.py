@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from buscador import gallica_crawl
+from buscador.core.acao_humana import TIPO_LOGIN, AcaoHumanaNecessaria
 from buscador.core.checkpoint import ConsultaDivergenteError, slug_consulta
 
 CONSULTA = 'dc.type all "monographie"'
@@ -67,6 +68,22 @@ def test_consulta_divergente_mostra_mensagem_amigavel_e_retorna_1(tmp_path, monk
 
     assert codigo == 1
     assert "consulta diferente da salva" in capsys.readouterr().out
+
+
+def test_acao_humana_necessaria_mostra_aviso_e_preserva_progresso(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(gallica_crawl, "DIRETORIO_COLETAS", tmp_path)
+
+    def coletar_que_precisa_de_login(*args, **kwargs):
+        raise AcaoHumanaNecessaria(TIPO_LOGIN, "precisa logar em tal-site", site="tal-site")
+    monkeypatch.setattr(gallica_crawl, "coletar", coletar_que_precisa_de_login)
+
+    codigo = gallica_crawl.main([CONSULTA])
+
+    saida = capsys.readouterr().out
+    assert codigo == 1
+    assert "Preciso da sua ajuda" in saida
+    assert "precisa logar em tal-site" in saida
+    assert str(tmp_path / slug_consulta(CONSULTA)) in saida
 
 
 def test_reiniciar_sem_confirmacao_cancela_e_nao_apaga(tmp_path, monkeypatch):

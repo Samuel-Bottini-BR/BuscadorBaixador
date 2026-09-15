@@ -100,6 +100,32 @@ Para cada site, decida **como** acessar, nesta ordem, **me avisando da escolha**
 - **Testes:** simples desde o começo — o parser rodando sobre um **HTML de exemplo
   salvo** (sem internet), verificando que extrai os links certos.
 
+### 8.1. Repertório de métodos de coleta
+
+Cada site pode precisar de um método de acesso diferente. O motor tenta vários em
+cascata (`core/metodo_coleta.py`), em ordem, e só interrompe o Samuel quando **nenhum**
+resolver — ver `core/acao_humana.py` para o sinal disso. Métodos conhecidos:
+
+| Método | Estado | Onde mora |
+|---|---|---|
+| API oficial sem chave | Pronto | `GallicaAdapter` |
+| API oficial com chave | Primitivas prontas (`acao_humana.py`, `config_sites.py`) | — |
+| Raspagem HTML educada (requisição crua, sem JS) | Pronto (específico); genérico ainda não existe | `PhpbbAdapter` |
+| Navegador automatizado (SeleniumBase, headless ou visível) — resolve JavaScript, login e CAPTCHA | Primitivas prontas (`navegador.py`, `cookies_navegador.py`) | — |
+| Sem via automatizável (lista manual de códigos) | Reconhecido (caso zvdd.de, seção 12), ainda não formalizado como método da cascata | — |
+
+**Sobre o navegador automatizado:** usamos o SeleniumBase pelas conveniências dele em
+cima do Selenium (espera automática de elemento, API mais simples) — **nunca** os
+recursos de disfarce contra detecção de robô que ele também tem (UC Mode/CDP Mode). Essa
+proibição é a mesma regra de não burlar detecção da seção 12 (caso zvdd.de) e não é
+negociável, mesmo que o pacote instalado deixe esses modos a uma linha de distância — a
+barreira aqui é a regra, não uma trava técnica.
+
+**Métodos conhecidos no mundo, sem adaptador ainda** (documentar, não construir até
+aparecer um caso real): **OAI-PMH** (biblioteca pronta `Sickle`/`oaipmh-scythe` — é o que
+zvdd.de e a DDB usam), **sitemap.xml**, **manifests IIIF**, **dumps públicos** para
+baixar o catálogo inteiro de uma vez.
+
 ## 9. Stack sugerida (confirmar comigo)
 Python 3.11+ com `.venv`. Rede: `httpx` (ou `requests`). HTML: `BeautifulSoup`.
 Planilha: `openpyxl`. Tradução grátis: `argostranslate` (offline) ou `deep-translator`.

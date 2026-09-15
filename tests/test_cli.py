@@ -5,6 +5,7 @@ from openpyxl import load_workbook
 from buscador import cli
 from buscador.adapters.base import Item
 from buscador.adapters.gallica import GallicaAdapter
+from buscador.core.acao_humana import TIPO_CHAVE_API, AcaoHumanaNecessaria
 
 
 class AdapterFake:
@@ -16,6 +17,14 @@ class AdapterFake:
                     autor="Fulano", fonte="Fonte Fake", extra={"idioma_origem": "fr"})
         yield Item(titulo_original="Outra Obra", link="https://academia.edu/b",
                     autor="Ciclano", fonte="Fonte Fake", extra={"idioma_origem": "fr"})
+
+
+class AdapterFakePrecisaChave:
+    def __init__(self, url):
+        self.url = url
+
+    def iter_itens(self):
+        raise AcaoHumanaNecessaria(TIPO_CHAVE_API, "cadastre-se em tal-site e cole a chave", site="tal-site")
 
 
 def test_escolher_adapter_por_dominio():
@@ -50,6 +59,18 @@ def test_main_dominio_desconhecido_mostra_mensagem_amigavel(capsys):
     codigo = cli.main(["https://site-nao-cadastrado.com"])
     assert codigo == 1
     assert "Não deu para continuar" in capsys.readouterr().out
+
+
+def test_main_acao_humana_necessaria_mostra_aviso_amigavel(capsys, monkeypatch):
+    monkeypatch.setattr(cli, "construir_adapter", lambda nome, url: AdapterFakePrecisaChave(url))
+
+    codigo = cli.main(["https://grand-sud-medieval.fr/forum/viewtopic.php?f=14&t=1", "--adapter", "phpbb"])
+
+    saida = capsys.readouterr().out
+    assert codigo == 1
+    assert "Preciso da sua ajuda" in saida
+    assert "tal-site" in saida
+    assert "cadastre-se" in saida
 
 
 def test_construir_adapter_gallica():

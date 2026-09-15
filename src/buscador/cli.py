@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 from buscador.adapters.gallica import GallicaAdapter
 from buscador.adapters.phpbb import PhpbbAdapter
+from buscador.core.acao_humana import AcaoHumanaNecessaria, formatar_aviso
 from buscador.core.enriquecimento import enriquecer_item
 from buscador.core.planilha import gerar_planilha
 
@@ -70,6 +71,9 @@ def main(argv=None):
         itens = [enriquecer_item(item) for item in adapter.iter_itens()]
     except ValueError as erro:
         print(f"Não deu para continuar: {erro}")
+        return 1
+    except AcaoHumanaNecessaria as erro:
+        print(formatar_aviso(erro))
         return 1
 
     if args.saida:

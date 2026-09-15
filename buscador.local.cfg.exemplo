@@ -1,0 +1,4 @@
+# Copie este arquivo para buscador.local.cfg (sem ".exemplo") e preencha.
+# buscador.local.cfg nunca vai pro git (esta no .gitignore).
+[ddb]
+chave_api = sua-chave-aqui
