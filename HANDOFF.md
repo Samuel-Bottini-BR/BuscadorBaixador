@@ -1,5 +1,146 @@
 # Buscador e Baixador — estado atual
 
+## Checkpoint 16/09/2026 — Coleta em cascata (motor multi-método), leia aqui primeiro
+
+Sessão grande, focada numa peça nova de arquitetura pedida pelo Samuel: o
+motor agora tenta **vários métodos de coleta em cascata** por site (API →
+HTML → navegador automatizado), só avisando o Samuel quando nenhum
+resolver. Plano completo (desenhado em plan mode, aprovado, depois
+executado em "modo automático" combinado só pra esse plano) está salvo em
+`C:\Users\fotog\.claude\plans\eu-quero-escrever-um-mighty-octopus.md`
+(fora deste repositório — é um arquivo do Claude Code, não do projeto,
+pode não existir mais numa máquina diferente). Resumo do que importa:
+
+**Arquitetura nova, construída e testada (`pytest` passando — 141 testes,
+antes eram 103):**
+- `core/acao_humana.py` — sinal `AcaoHumanaNecessaria` (tipos: chave de
+  API, login, CAPTCHA) pra um método dizer "preciso do Samuel" em vez de
+  travar feio ou tentar burlar. Nunca deve ser capturado dentro de laço de
+  retentativa de infraestrutura.
+- `core/config_sites.py` — lê chave de API por site de `buscador.local.cfg`
+  (`.ini`, nunca vai pro git). `buscador.local.cfg.exemplo` documenta o formato.
+- `core/metodo_coleta.py` — a cascata (`MetodoColeta` + `coletar_em_cascata`):
+  tenta métodos em ordem, um indisponível/que falha no meio só gera log
+  discreto (o próximo método ainda pode resolver); só quando o **último**
+  falha é que levanta `AcaoHumanaNecessaria` de verdade, juntando os motivos.
+- `core/cookies_navegador.py` + `core/navegador.py` — primeira e segunda
+  camada de resolver login: ler cookie do Chrome normal do Samuel
+  (`browser_cookie3`), e se isso não bastar, navegador automatizado
+  (`seleniumbase`, headless ou visível) com sessão persistente por site
+  (perfil de Chrome isolado em `sessoes_navegador/<site>/`, gitignored).
+  Quando o modo headless trava em login/CAPTCHA, abre uma janela visível
+  **na hora** (`resolver_na_mao`), sem precisar de outro comando — o
+  Samuel resolve olhando a tela, aperta Enter, a sessão fica salva e a
+  coleta continua sozinha em segundo plano.
+- `adapters/internet_archive.py` — primeira aplicação real da cascata
+  (mais abaixo, seção própria).
+- **Todo o código do pacote (`src/buscador/`, 22 arquivos) ganhou
+  comentário explicativo linha a linha**, a pedido do Samuel (está
+  aprendendo a programar) — nível "explica pra quem não sabe programar,
+  mas não esconde o termo técnico". Convenção `# !` (extensão Better
+  Comments do VS Code, fica vermelho) pros avisos críticos de
+  segurança/ética, tipo a proibição do UC Mode/CDP Mode.
+
+**Decisões fechadas nesta sessão, com o porquê:**
+- **SeleniumBase** (não Selenium puro, não Playwright) pro navegador
+  automatizado — mais tutorial em português, menos código de espera/
+  localização de elemento pra escrever na mão.
+- **UC Mode/CDP Mode do SeleniumBase são proibidos, sem exceção** — são
+  recursos de disfarce contra detecção de robô. O Samuel pediu
+  explicitamente pra desfazer essa regra e liberar o uso; recusei, e
+  expliquei que é uma linha que sigo independente do que o projeto
+  mandar. Reforçado de novo mais tarde na mesma sessão quando ele tentou
+  a mesma coisa por outros ângulos (ver caso Scribd, abaixo) — a resposta
+  não muda com reformulação.
+- **`browser_cookie3` não funciona no Chrome do Samuel (versão 152)** —
+  testado ao vivo. Motivo: "app-bound encryption", proteção que o Google
+  colocou desde o Chrome 127 (meados de 2024) especificamente contra
+  programas externos lendo cookie sem passar pelo navegador. Não é bug
+  nosso, o código já trata isso direito (devolve `None`). **Não vamos
+  tentar contornar essa proteção** — mesma categoria de regra do UC/CDP
+  Mode. Na prática, quem resolve login de verdade hoje é a camada 2
+  (sessão salva via navegador automatizado), não a camada 1.
+- **Não usar o Chrome pessoal do Samuel pro navegador automatizado** —
+  perfis isolados por site em vez disso. Motivos: o Chrome dele fica
+  aberto o tempo todo (travaria a pasta de perfil), e um perfil isolado
+  limita o que a automação consegue acessar só ao que foi explicitamente
+  logado ali, sem expor o resto da vida digital dele.
+
+**Caso Scribd — descartado como fonte, com justificativa forte:**
+O Samuel queria abrir o Scribd, logar, e o programa "olhar" 5 livros pra
+montar planilha. Chequei o `robots.txt` deles (protocolo da seção 7 do
+CLAUDE.md) antes de escrever qualquer código: bloqueiam `/read/`,
+`/viewer/`, `/full/`, `/doc/protected/` pra **qualquer** robô, e têm uma
+regra nomeada bloqueando `Claude-Web`/`ClaudeBot` no site inteiro (junto
+com outros bots de IA). Recusei construir isso, e recusei de novo em
+várias reformulações que o Samuel tentou: usar o perfil de Chrome dele
+("não muda quem está lendo, só onde"), eu abrir o navegador ao vivo sem
+salvar código ("ainda é automação, arquivo salvo ou não"), trocar de
+biblioteca pra Playwright ("a ferramenta nunca foi a questão"), procurar
+ferramenta pronta de terceiros pra isso ("terceirizar não muda nada").
+**Scribd fica descartado como fonte automatizável neste projeto**, mesmo
+critério do zvdd.de (seção 12 do CLAUDE.md).
+
+**Internet Archive — novo site cadastrado, confirmado viável e já com
+adaptador real:**
+- `robots.txt` do archive.org só bloqueia `/control/` e `/report/`
+  (administrativo) — nenhuma restrição contra automação/IA.
+- API oficial de busca (`archive.org/advancedsearch.php`, "Advanced
+  Search API"), documentada, sem chave, JSON limpo. Confirmado ao vivo:
+  busca por `subject:"theology"` sozinha já tem 234.243 resultados.
+- `adapters/internet_archive.py`: `MetodoApiInternetArchive` (o método de
+  verdade, usa a API) + `InternetArchiveAdapter` (embrulho fino que pluga
+  esse método numa cascata de 1 item, pra funcionar com o `cli.py`
+  existente) — é a primeira aplicação real da cascata em produção.
+- **Testado ao vivo, ponta a ponta** (não só mock): `python -m
+  buscador.cli "identifier:ellesmere-pride-and-prejudice" --adapter
+  internet_archive` gerou uma planilha real, com título/autor/ano/link
+  corretos e verificação de link real encontrando PDF na página.
+- **Bug real encontrado e corrigido nesse teste ao vivo:** quando o IA não
+  informa idioma, o adaptador colocava `""` em `extra["idioma_origem"]` —
+  isso quebrava o fallback pra "auto" em `core/enriquecimento.py` (o
+  `.get(chave, "auto")` só cai no padrão quando a CHAVE não existe, não
+  quando o valor é vazio). Corrigido: a chave só é preenchida quando o
+  idioma é conhecido de verdade.
+- **Parte do acervo é "biblioteca de empréstimo"** (Controlled Digital
+  Lending, campo `access-restricted-item` no metadado) — função oficial
+  do IA, não precisa de login pra *listar* (Fase 1 só lista, não baixa),
+  só fica marcado em `extra["access_restricted"]` pra quem for baixar
+  depois saber.
+- `archive.org` entrou em `REPO_HOSTS` de `core/verificacao_links.py`
+  (mesmo tratamento da Gallica).
+
+**Pendência exata, em aberto agora — retomar exatamente aqui:**
+O Samuel pediu pra testar também o caminho de login de verdade: escolher
+de propósito um item `access-restricted-item` do Internet Archive
+(empréstimo) e testar o navegador automatizado abrindo, travando por
+falta de login, abrindo janela visível, o Samuel logando, e confirmando
+que a sessão salva funciona depois em modo headless — o mesmo teste que já
+foi feito com sucesso no Scribd (antes de descobrir que o Scribd era
+proibido) e que falhou na primeira tentativa por confusão de instrução
+(ver mais abaixo). **Ainda não escolhi um identifier de item
+access-restricted de verdade pra esse teste** — precisa buscar um (ex.:
+`access-restricted-item:true AND mediatype:texts` na Advanced Search API)
+antes de continuar. O Samuel disse "loguei agora" bem no fim da sessão,
+mas **não ficou claro se ele logou no Chrome pessoal dele (arquive.org,
+site normal) ou se era só um sinal de que está pronto pra fazer o login
+de verdade dentro da janela do navegador automatizado quando a sessão
+retomar** — como decidimos não usar o Chrome pessoal dele pra automação
+(ver decisões acima), logar lá não ajuda diretamente; **perguntar isso
+antes de prosseguir** com o teste.
+
+**Lição aprendida do teste com o Scribd (útil pra próxima vez que abrir
+uma janela visível pra login):** na primeira tentativa, o Samuel viu a
+janela abrir mas não conseguiu logar a tempo — ele confundiu um pop-up do
+**Chrome** ("Fazer login no Chrome", sobre sincronizar conta Google) com o
+login do **site**. Da próxima vez, ser mais explícito nas instruções sobre
+onde clicar (o botão de login do site em si, não qualquer pop-up do
+navegador que aparecer), e dar tempo generoso (~90s funcionou melhor que 60s).
+
+**`git`:** branch `feat/fase1-mapeador`, 5 commits novos nesta sessão
+(`7cd0bc6` até `ea1012b`), todos com `pytest` passando antes de cada
+commit, todos já enviados (`git push`) pro GitHub.
+
 ## O que é e para quem
 
 Aplicativo local (Windows) para o Instituto São Bento achar, baixar e
@@ -26,10 +167,9 @@ dropdown de avaliação, no mesmo estilo do `Garimpo_GSM_MESTRE_VERIFICADO.xlsx`
   links de `gallica.bnf.fr` reconhecidos como repositório.
 
 - Repositório: https://github.com/Samuel-Bottini-BR/BuscadorBaixador
-  (branch de trabalho: `feat/fase1-mapeador`, commit mais recente conferido
-  em 13/09/2026: `d3bc03d`, `pytest` passando — **103 testes** hoje, não 64
-  como este arquivo dizia antes; o número cresceu em commits que já
-  existiam e este handoff não tinha acompanhado).
+  (branch de trabalho: `feat/fase1-mapeador`; commit mais recente em
+  16/09/2026: `ea1012b`, `pytest` passando — **141 testes** hoje, ver
+  checkpoint 16/09/2026 no topo deste arquivo pra o que mudou desde então).
 - Pacote Python instalável (`pyproject.toml`, `src/buscador/`), `.venv` com
   Python 3.12 (instalado à parte do 3.14 global, por causa do `argostranslate`).
 - `PhpbbAdapter` (fórum, com paginação) e `GallicaAdapter` (API SRU da BnF,
@@ -272,8 +412,20 @@ aberto no lugar desta.
   ainda não têm essa nota nos respectivos CLAUDE.md/handoff — perguntei se
   valia adicionar lá também, sem resposta ainda.
 
-## O que falta (próximas fases, ver CLAUDE.md seção 10)
+## O que falta
 
+**Imediato (retomar exatamente aqui, ver checkpoint 16/09/2026 no topo):**
+1. Perguntar ao Samuel onde ele logou ("Chrome pessoal" vs "pronto pra
+   logar na janela automatizada") antes de continuar.
+2. Achar um identifier real de item `access-restricted-item:true` do
+   Internet Archive pra testar o fluxo de login de verdade.
+3. Testar: navegador headless trava por falta de login → abre janela
+   visível → Samuel loga → sessão salva → headless funciona depois.
+4. Passo 9 do plano da cascata, ainda não feito: `buscador/logar.py`
+   (comando avulso, reaproveita a mesma função de `core/navegador.py` que
+   já existe — pouco código novo).
+
+**Fases futuras do projeto (ver CLAUDE.md seção 10), ainda não começadas:**
 - **Fase 2** — baixar os PDFs marcados (inclusive atrás de login já feito
   pelo Samuel).
 - **Fase 3** — baixar já organizando por categoria/seção.
@@ -282,13 +434,28 @@ aberto no lugar desta.
 - Antes de começar a Fase 2: seguir a seção 4 do CLAUDE.md (plan mode por
   fase) de novo.
 
+**Ainda parado de sessões anteriores, não esquecido, só não é o foco
+agora** (ver seções acima sobre a Gallica pra detalhe completo):
+- Coleta SRU em massa da Gallica parada em 33% (311.750/934.080) — rodar
+  o comando de retomar quando fizer sentido.
+- Baldes de categorização do mapeamento por curadoria da Gallica (46.222
+  itens) ainda precisam de ajuste fino antes de gerar a planilha final.
+
 ## Como rodar
 
 ```
 D:\programas\BuscadorBaixador\.venv\Scripts\python.exe -m pytest -q
 D:\programas\BuscadorBaixador\.venv\Scripts\python.exe -m buscador.cli "https://grand-sud-medieval.fr/forum/viewtopic.php?f=14&t=<ID>"
 D:\programas\BuscadorBaixador\.venv\Scripts\python.exe -m buscador.cli "gallica all Clavius" --adapter gallica
+D:\programas\BuscadorBaixador\.venv\Scripts\python.exe -m buscador.cli "subject:theology AND mediatype:texts" --adapter internet_archive
 ```
+
+**Ambiente instalado nesta sessão** (16/09/2026, além do que já existia):
+`browser-cookie3` e `seleniumbase` (adicionados a `pyproject.toml` —
+`pip install -e ".[dev]"` reinstala tudo). O SeleniumBase baixou sozinho
+o `chromedriver` 152.0.7977.82 (compatível com o Chrome 152 instalado) em
+`.venv\Lib\site-packages\seleniumbase\drivers\` — automático, não precisa
+fazer nada manual.
 
 **Coleta em massa da Gallica (achado neste checkpoint, ver seção acima) —
 retomar a que já está 33% feita:**
