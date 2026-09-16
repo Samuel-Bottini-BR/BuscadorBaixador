@@ -111,8 +111,21 @@ resolver — ver `core/acao_humana.py` para o sinal disso. Métodos conhecidos:
 | API oficial sem chave | Pronto | `GallicaAdapter` |
 | API oficial com chave | Primitivas prontas (`acao_humana.py`, `config_sites.py`) | — |
 | Raspagem HTML educada (requisição crua, sem JS) | Pronto (específico); genérico ainda não existe | `PhpbbAdapter` |
-| Navegador automatizado (SeleniumBase, headless ou visível) — resolve JavaScript, login e CAPTCHA | Primitivas prontas (`navegador.py`, `cookies_navegador.py`) | — |
+| Login lendo cookie do Chrome normal (`browser_cookie3`) | Pronto, mas **confirmado que não funciona no Chrome atual do Samuel** (ver nota abaixo) | `cookies_navegador.py` |
+| Navegador automatizado (SeleniumBase, headless ou visível) — resolve JavaScript, login e CAPTCHA | Ainda não construído (próximo passo) | `navegador.py` |
 | Sem via automatizável (lista manual de códigos) | Reconhecido (caso zvdd.de, seção 12), ainda não formalizado como método da cascata | — |
+
+**Sobre `cookies_navegador.py` (ler login do Chrome):** testado ao vivo em 15/09/2026
+contra o Chrome 152 do Samuel — **não funciona**, e não é bug nosso: desde o Chrome 127
+(meados de 2024), o Google cifra os cookies com "app-bound encryption", uma proteção de
+segurança deles especificamente contra programas de fora lendo cookie sem passar pelo
+próprio Chrome (a mesma técnica que ladrão de sessão/malware tentaria usar). A biblioteca
+`browser_cookie3` não consegue descriptografar nesse caso — e devolve vazio de forma
+limpa (sem quebrar o programa), como já estava desenhado. **Não vamos tentar contornar
+essa proteção** — é a mesma categoria de regra do UC Mode/CDP Mode abaixo: existe técnica
+pra isso, mas é contornar uma barreira de segurança colocada de propósito, não construímos
+isso. Na prática, isso quer dizer que quem resolve login de verdade, hoje, é a camada
+seguinte (sessão salva via `logar.py`), não esta.
 
 **Sobre o navegador automatizado:** usamos o SeleniumBase pelas conveniências dele em
 cima do Selenium (espera automática de elemento, API mais simples) — **nunca** os
