@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Ponto de entrada de linha de comando da Etapa 2: verifica link + traduz
-o que a Etapa 1 (gallica_crawl.py) ja coletou, em lotes, retomavel entre
-execucoes. Ver core/enriquecimento_lote.py."""
+"""
+Ponto de entrada de linha de comando da Etapa 2: pega o que a Etapa 1
+(gallica_crawl.py) já coletou em bruto (só título/link/metadado, sem
+verificar nem traduzir nada ainda) e verifica cada link + traduz cada
+título, em lotes, de forma retomável entre execuções. Ver
+core/enriquecimento_lote.py pra entender o motor por trás disso.
+"""
 import argparse
 from pathlib import Path
 
@@ -10,13 +14,20 @@ from buscador.core.enriquecimento_lote import LOTE_TAMANHO_PADRAO, WORKERS_PADRA
 
 SAIDAS = Path(__file__).resolve().parent.parent.parent / "saidas"
 DIRETORIO_COLETAS = SAIDAS / "gallica_crawl"
+# Mesma pasta que gallica_crawl.py usa -- a Etapa 2 lê o que a Etapa 1
+# deixou salvo ali (o CSV bruto), então precisam apontar pro mesmo lugar.
 
 
 def _mostrar_progresso(checkpoint, total_lotes):
+    """Passada pro motor (core/enriquecimento_lote.py) como a função que
+    ele chama depois de cada lote terminar, pra mostrar o andamento no terminal."""
     print(f"  lote {checkpoint.proximo_lote}/{total_lotes} concluído")
 
 
 def main(argv=None):
+    """Função principal deste arquivo -- roda quando você digita
+    "python -m buscador.gallica_enriquecer <job>" no terminal, onde <job>
+    é o mesmo nome de pasta usado na Etapa 1."""
     parser = argparse.ArgumentParser(
         description="Etapa 2: verifica link + traduz o que a Etapa 1 já coletou (retomável)."
     )
@@ -30,6 +41,8 @@ def main(argv=None):
     diretorio_job = DIRETORIO_COLETAS / args.job
     caminho_csv = diretorio_job / "itens.csv"
     if not caminho_csv.exists():
+        # se o CSV da Etapa 1 não existe, não tem nada pra enriquecer --
+        # avisa de forma clara em vez de dar um erro técnico confuso
         print(f"Não deu para continuar: não achei '{caminho_csv}'. Rode a Etapa 1 (gallica_crawl) primeiro.")
         return 1
 

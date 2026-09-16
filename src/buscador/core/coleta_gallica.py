@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Motor da coleta longa da Gallica (Etapa 1): junta o checkpoint, o
-escritor de CSV e a paginacao retomavel do GallicaAdapter para buscar uma
-consulta inteira -- ex.: os 933 mil livros do catalogo. Ver CLAUDE.md,
-secao sobre mapear o catalogo inteiro da Gallica, e a pergunta em aberto
-que originou essa peca."""
+"""
+Este é o "motor" da coleta longa da Gallica (Etapa 1): junta o checkpoint
+(core/checkpoint.py), o escritor de CSV (core/coleta_csv.py) e a paginação
+retomável do GallicaAdapter (adapters/gallica.py) pra buscar uma consulta
+inteira -- por exemplo, os 933 mil livros do catálogo inteiro. Ver
+CLAUDE.md, seção sobre mapear o catálogo inteiro da Gallica, pra mais
+contexto da pergunta que originou essa peça.
+"""
 import time
 
-import requests
+import requests  # usado aqui só pra reconhecer os tipos de erro que ela pode lançar (ex.: requests.HTTPError)
 
 from buscador.adapters.gallica import GallicaAdapter, RespostaVaziaInesperadaError
 from buscador.core.checkpoint import carregar_ou_criar, salvar
@@ -17,6 +20,9 @@ from buscador.core.coleta_csv import EscritorCsvIncremental
 # chamadas/minuto), que nao da pra assumir que vale igual aqui. 10 minutos
 # e um primeiro palpite pra recalibrar depois do primeiro teste real longo.
 COOLDOWN_429_PADRAO_SEGUNDOS = 10 * 60
+# "429" é o código HTTP que significa "você pediu demais, espera um
+# pouco" (Too Many Requests). "Cooldown" = tempo de espera antes de tentar
+# de novo.
 
 # Visto ao vivo (2026-09-08): uma pagina no meio de uma coleta real voltou
 # vazia por uma falha temporaria da Gallica -- tentar de novo alguns minutos
@@ -34,6 +40,9 @@ COOLDOWN_PAGINA_VAZIA_PADRAO_SEGUNDOS = 30
 # de se recuperar sozinho; como a tentativa recomeca sempre do checkpoint,
 # uma falha mais longa so significa mais ciclos de espera, nao perda de dado.
 COOLDOWN_INFRA_PADRAO_SEGUNDOS = 60
+# "500" é um código HTTP que significa "deu erro do lado do servidor" (não
+# é culpa do nosso pedido) -- diferente de erros "4xx" (começando com 4),
+# que normalmente significam que o PEDIDO que fizemos estava errado.
 
 
 def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_000_000,
@@ -55,15 +64,23 @@ def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_00
     cooldown_infra_segundos e faz o mesmo. So um 4xx que NAO seja 429 propaga
     de verdade -- isso indica problema na nossa propria requisicao (consulta
     mal formada, por exemplo), que tentar de novo pra sempre nao resolve."""
+    # "dormir=time.sleep" é um parâmetro que por padrão é a função de
+    # verdade de pausar (time.sleep), mas pode ser substituído por uma
+    # função falsa nos testes automatizados -- assim os testes não
+    # precisam esperar minutos de verdade pra confirmar que o cooldown foi chamado.
     diretorio_job.mkdir(parents=True, exist_ok=True)
     caminho_checkpoint = diretorio_job / "checkpoint.json"
     caminho_csv = diretorio_job / "itens.csv"
     checkpoint = carregar_ou_criar(caminho_checkpoint, consulta, tamanho_pagina)
     if checkpoint.concluido:
-        return checkpoint
+        return checkpoint  # já tinha terminado antes -- nada a fazer
 
     with EscritorCsvIncremental(caminho_csv) as escritor:
         while not checkpoint.concluido:
+            # recria o adaptador a cada volta do laço, sempre a partir do
+            # checkpoint mais atual -- assim, se essa volta falhar e a
+            # gente "continue" pro início do laço de novo, ele já começa
+            # exatamente de onde o checkpoint disse que parou
             adapter = GallicaAdapter(
                 consulta, cliente=cliente, max_resultados=max_registros_alvo,
                 tamanho_pagina=tamanho_pagina, startrecord_inicial=checkpoint.proximo_start_record,
@@ -71,12 +88,14 @@ def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_00
             try:
                 _coletar_paginas_restantes(adapter, escritor, checkpoint, caminho_checkpoint, progresso_fct)
             except requests.HTTPError as erro:
+                # "HTTPError" é o erro que a biblioteca requests levanta
+                # quando a resposta veio com um código de "deu errado".
                 codigo = erro.response.status_code if erro.response is not None else None
                 if codigo == 429:
                     print(f"429 persistente em startRecord={checkpoint.proximo_start_record}; "
                           f"pausando {cooldown_429_segundos}s antes de tentar de novo...")
                     dormir(cooldown_429_segundos)
-                    continue
+                    continue  # volta pro início do "while" -- vai recriar o adapter e tentar de novo
                 if codigo is not None and codigo >= 500:
                     print(f"Erro do servidor da Gallica ({codigo}) em startRecord="
                           f"{checkpoint.proximo_start_record}; pausando {cooldown_infra_segundos}s "
@@ -94,18 +113,27 @@ def coletar(consulta, diretorio_job, tamanho_pagina=50, max_registros_alvo=10_00
                       "antes de tentar de novo...")
                 dormir(cooldown_infra_segundos)
                 continue
+            # se chegou até aqui sem cair em nenhum "except" acima, todas
+            # as páginas foram coletadas com sucesso -- termina o laço
             checkpoint.concluido = True
             salvar(checkpoint, caminho_checkpoint)
     return checkpoint
 
 
 def _coletar_paginas_restantes(adapter, escritor, checkpoint, caminho_checkpoint, progresso_fct):
+    # Percorre página por página a partir de onde o adapter foi configurado
+    # pra começar (ver startrecord_inicial acima). Se ISSO aqui lançar
+    # algum erro no meio, a função "coletar" (acima) captura e decide o que
+    # fazer -- essa função aqui não trata erro nenhum sozinha.
     for inicio_pagina, itens_pagina in adapter.iter_paginas():
-        escritor.escrever_pagina(itens_pagina)
+        escritor.escrever_pagina(itens_pagina)  # grava a página no CSV primeiro
         checkpoint.proximo_start_record = inicio_pagina + len(itens_pagina)
         checkpoint.itens_gravados += len(itens_pagina)
         if adapter.total_ultima_busca is not None:
             checkpoint.total_registros_api = adapter.total_ultima_busca
         salvar(checkpoint, caminho_checkpoint)
+        # só salva o checkpoint DEPOIS de já ter gravado a página no CSV --
+        # essa ordem é o que garante que uma interrupção no pior caso só
+        # repete uma página, nunca perde uma (ver docstring da função coletar)
         if progresso_fct is not None:
-            progresso_fct(checkpoint)
+            progresso_fct(checkpoint)  # chama a função de mostrar progresso na tela, se foi passada uma
