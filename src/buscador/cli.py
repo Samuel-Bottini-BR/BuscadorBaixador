@@ -18,6 +18,7 @@ from pathlib import Path  # jeito moderno do Python de lidar com caminhos de arq
 from urllib.parse import parse_qs, urlparse  # ferramentas pra desmontar uma URL em pedaços (domínio, parâmetros, etc.)
 
 from buscador.adapters.gallica import GallicaAdapter
+from buscador.adapters.internet_archive import InternetArchiveAdapter
 from buscador.adapters.phpbb import PhpbbAdapter
 from buscador.core.acao_humana import AcaoHumanaNecessaria, formatar_aviso
 from buscador.core.enriquecimento import enriquecer_item
@@ -29,6 +30,7 @@ from buscador.core.planilha import gerar_planilha
 ADAPTERS_POR_DOMINIO = {
     "grand-sud-medieval.fr": "phpbb",
     "gallica.bnf.fr": "gallica",
+    "archive.org": "internet_archive",
 }
 
 # Pasta onde as planilhas geradas são salvas. "Path(__file__)" é o caminho
@@ -59,6 +61,8 @@ def construir_adapter(nome_adapter, url_ou_consulta):
         return PhpbbAdapter(url_ou_consulta)
     if nome_adapter == "gallica":
         return GallicaAdapter(_extrair_consulta_gallica(url_ou_consulta))
+    if nome_adapter == "internet_archive":
+        return InternetArchiveAdapter(url_ou_consulta)
     raise ValueError(f"Adaptador desconhecido: {nome_adapter}")
 
 
@@ -96,7 +100,7 @@ def main(argv=None):
     argumentos digitados de verdade no terminal."""
     parser = argparse.ArgumentParser(description="Mapeia um site para uma planilha (Fase 1).")
     parser.add_argument("url", help="URL de entrada (topico ou busca do site)")
-    parser.add_argument("--adapter", choices=["phpbb", "gallica"], help="Força um adaptador específico")
+    parser.add_argument("--adapter", choices=["phpbb", "gallica", "internet_archive"], help="Força um adaptador específico")
     parser.add_argument("--saida", help="Caminho do .xlsx de saída (padrão: saidas/<site>_<data>.xlsx)")
     args = parser.parse_args(argv)  # lê e organiza o que foi digitado no terminal
 

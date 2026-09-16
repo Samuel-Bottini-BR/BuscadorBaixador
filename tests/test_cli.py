@@ -5,6 +5,7 @@ from openpyxl import load_workbook
 from buscador import cli
 from buscador.adapters.base import Item
 from buscador.adapters.gallica import GallicaAdapter
+from buscador.adapters.internet_archive import InternetArchiveAdapter
 from buscador.core.acao_humana import TIPO_CHAVE_API, AcaoHumanaNecessaria
 
 
@@ -35,6 +36,17 @@ def test_escolher_adapter_por_dominio():
 def test_escolher_adapter_gallica_por_dominio():
     url = 'https://gallica.bnf.fr/SRU?operation=searchRetrieve&version=1.2&query=gallica all "Clavius"'
     assert cli.escolher_adapter(url) == "gallica"
+
+
+def test_escolher_adapter_internet_archive_por_dominio():
+    url = "https://archive.org/details/algumitem"
+    assert cli.escolher_adapter(url) == "internet_archive"
+
+
+def test_construir_adapter_internet_archive():
+    adapter = cli.construir_adapter("internet_archive", "subject:theology")
+    assert isinstance(adapter, InternetArchiveAdapter)
+    assert adapter.consulta == "subject:theology"
 
 
 def test_extrair_consulta_gallica_de_url_de_busca():

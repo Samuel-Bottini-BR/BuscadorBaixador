@@ -29,7 +29,7 @@ LOGIN_HOSTS = ("academia.edu", "drive.google.com", "docs.google.com", "jstor.org
 REPO_HOSTS = ("persee.fr", "archives-ouvertes.fr", "raco.cat", "revues.org", "openedition",
               "oapen.org", "unesdoc.unesco.org", "collectionscanada.gc.ca", "thesescanada",
               "archipel.uqam.ca", "theses.univ-lyon2.fr", "gallica.bnf.fr", "digidol.llgc.org.uk",
-              "gipuzkoakultura.net", "nauticalarch.org", "bibnum.enc.sorbonne.fr")
+              "gipuzkoakultura.net", "nauticalarch.org", "bibnum.enc.sorbonne.fr", "archive.org")
 PDF_RE = re.compile(r'\.pdf(["\'?#)\s]|$)', re.I)
 # Esse "regex" (expressão regular) procura ".pdf" seguido de um desses
 # caracteres (aspas, interrogação, parêntese, espaço) ou do fim do texto --
