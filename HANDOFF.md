@@ -1,5 +1,129 @@
 # Buscador e Baixador — estado atual
 
+## Checkpoint 17/09/2026 (sessão 2) — desenho do motor de jobs, leia aqui primeiro
+
+Sessão de brainstorming (skill `superpowers:brainstorming`, caminho
+arquitetural) sobre um **motor de jobs** — a peça que deixa o programa
+rodar várias tarefas ao mesmo tempo, sem terminal manual, pensando já num
+uso futuro pelo Kaique (dashboard, projeto separado, vem depois). Ao mesmo
+tempo, retomamos as duas frentes que tinham ficado paradas da Gallica
+(pergunta em aberto do checkpoint anterior — ver resolução logo abaixo).
+
+**Spec escrita, revisada e commitada:**
+`docs/superpowers/specs/2026-09-17-motor-de-jobs-design.md` (commit
+`24c6deb`, enviado ao GitHub). Leia o arquivo pra o desenho completo —
+resumo das decisões principais:
+
+- **Arquitetura escolhida: subprocessos + registro em JSON** (não um
+  processo supervisor único, não fila de arquivos) — cada job roda como
+  processo isolado do Windows, reaproveitando o padrão de escrita atômica
+  de `core/checkpoint.py`. Motivo: nenhum ponto único de falha, nada
+  precisa ficar ligado o tempo todo, e um job travando não derruba os
+  outros.
+- **Job = alvo + lista de estágios configurável.** Estágios: Mapear
+  (obrigatório, primeiro, deve capturar o máximo de metadado disponível
+  na fonte) → Verificar links e Traduzir (independentes entre si) → Baixar
+  (depende de Verificar; ainda não implementado, é Fase 2). Dá pra
+  ligar/desligar estágio por job, inclusive depois que outros já rodaram
+  (ex.: mapear sem traduzir agora, adicionar traduzir depois sobre o que
+  já foi mapeado).
+- **Categorização no estágio Mapear, em 3 níveis de custo crescente:**
+  (1) categoria formal de API/metadado do site, se existir — usa direto;
+  (2) se não, tenta a trilha de navegação (`secao`/breadcrumb, já coletada
+  hoje) e sugere pra Samuel aprovar; (3) se nenhuma resolver, a IA entra —
+  primeiro propondo a lista de categorias em rodadas "por exclusão"
+  (Samuel aprova/rejeita/pede mais, sem repetir o que já foi decidido),
+  depois classificando cada item pelos metadados disponíveis.
+- **Decisão importante, com pedido explícito do Samuel: nenhuma API paga
+  da Anthropic em lugar nenhum do projeto.** Motivo: sem orçamento
+  disponível agora. As duas frentes de IA (propor categorias, classificar
+  item) usam só: **(a) modelo local via Ollama** (grátis, mais lento — ver
+  estimativa de hardware abaixo) ou **(b) handoff manual via Claude Code**
+  (o job exporta um arquivo, Samuel traz numa sessão como esta, recebe o
+  resultado de volta, importa — grátis dentro da assinatura Max, mais
+  rápido, mas exige Samuel presente).
+- **Descartado explicitamente: usar o Claude Agent SDK autenticado pela
+  assinatura Max pra automação não-supervisionada.** Tecnicamente possível,
+  mas descartado por incerteza real sobre se está dentro dos termos de uso
+  do plano Max (pensado pra assistente interativo, não motor de
+  classificação em lote rodando sozinho) e por competir pelo mesmo limite
+  semanal do uso interativo do Samuel com sobrecarga maior por chamada. O
+  handoff manual (uma sessão real, iniciada pelo Samuel) evita esse risco.
+- **Hardware do Samuel confirmado nesta sessão** (relevante pra dimensionar
+  o modelo local): Ryzen 7 5800H (8 núcleos/16 threads), 16GB RAM, GPU
+  dedicada NVIDIA GTX 1650 com **4GB de VRAM** (só isso comporta bem
+  folgado; a GPU integrada AMD Radeon do mesmo chip não é relevante pra
+  isso). Estimativa não confirmada por teste real: um modelo pequeno
+  (~3B parâmetros, ex. Llama 3.2 3B/Qwen2.5 3B) classificaria os 46.222
+  itens da Gallica em ~3-5h rodando em lote, como job de segundo plano.
+  **Próxima sessão que for validar isso deve rodar um teste real com
+  200-300 itens antes de confiar nesse número.**
+- **Nota de visão pra mais pra frente** (Fase 4/5 do roadmap, não desenhar
+  ainda): o passo de "IA classifica pelos metadados disponíveis" foi
+  desenhado pra não precisar mudar de forma quando o OCR existir — o mesmo
+  passo passaria a receber também o texto extraído do livro. A ideia do
+  Samuel de organizar por categoria/tema/autor com ajuda do OCR e integrar
+  com o outro app de biblioteca que ele está construindo fica registrada
+  aqui como visão, não como plano.
+
+**Próximo passo recomendado:** ainda não existe plano de implementação —
+só o desenho. Quando o Samuel quiser seguir, invocar a skill
+`superpowers:writing-plans` a partir do spec acima (o próprio spec já
+está commitado e revisado; a skill `brainstorming` normalmente pede pra
+confirmar a leitura do spec antes de virar plano — perguntar ao Samuel se
+já pode seguir direto ou se ele quer reler o arquivo primeiro).
+
+### Resolução da pergunta em aberto do checkpoint 17/09 anterior
+
+A pergunta "retomar pelos baldes de categorização ou pela coleta SRU?"
+(ver seção mais abaixo, "Pergunta em aberto (17/09/2026)") foi respondida:
+**os dois em paralelo.** Ambos foram disparados nesta sessão e continuam
+**rodando em segundo plano, não concluídos** no momento deste checkpoint:
+
+- **Coleta SRU da Gallica** (`gallica_crawl`, retomada de onde parou):
+  em **378.750 / 934.427 registros (~40,5%)**, checkpoint em
+  `saidas/gallica_crawl/dc-type-all-monographie-4d1e657b14/checkpoint.json`,
+  atualizado pela última vez às 19:19:54 UTC de 17/09. **Ainda rodando**
+  quando este handoff foi escrito — uma sessão futura deve checar esse
+  arquivo de novo pra saber se terminou, e se não, pode simplesmente rodar
+  o mesmo comando de novo (retoma sozinho pelo checkpoint).
+- **Conserto da categorização do mapeamento por curadoria** (46.222 itens):
+  delegado a um agente em segundo plano. **Categorização já finalizada e
+  verificada** contra os 46.222 itens reais (distribuição final abaixo).
+  **Tradução dos títulos ainda em andamento**: **22.879 / 46.222 (~49,5%)**
+  no arquivo `saidas/amostra_categorizada_traduzida.json` (43MB, é o
+  arquivo completo sendo preenchido incrementalmente, não uma amostra
+  pequena apesar do nome — script novo, ainda sem teste, ver abaixo).
+  Planilha final (índice + abas, padrão aprovado em 15/09) **ainda não foi
+  gerada** — só depois que a tradução terminar.
+
+**Distribuição final da categorização** (46.222 itens, baldes ajustados
+pelo agente nesta sessão — números batem com o total, nenhum item
+duplicado ou perdido):
+- Literatura Clássica Francesa: 19.325 (41,8%)
+- Outros (não coberto pelos baldes): 9.086 (19,7%)
+- Paris e História Local: 7.663 (16,6%)
+- Quadrinhos: 5.253 (11,4%)
+- Ciências e Natureza: 2.611 (5,6%)
+- Manuscritos Medievais: 1.193 (2,6%)
+- Referência e Enciclopédias: 619 (1,3%)
+- Traduções e Literaturas Estrangeiras: 280 (0,6%)
+- Religião e Teologia: 192 (0,4%)
+
+**Arquivos criados/alterados por esse agente, ainda NÃO commitados —
+aguardando revisão do Samuel antes de virar commit** (instrução explícita
+dada ao agente, pra não commitar lógica que o Samuel ainda não olhou):
+- `scripts/categorizar_amostra_gallica.py` — modificado (baldes de
+  palavra-chave refinados; 143 inserções/57 remoções no diff).
+- `scripts/traduzir_titulos_lote_gallica.py` — novo, reaproveita o padrão
+  de `core/enriquecimento_lote.py` pra traduzir em lotes retomáveis.
+  **Está em uso agora mesmo pelo processo em segundo plano** — não editar
+  nem apagar até o job atual terminar ou ser parado de propósito.
+
+**Testes:** `pytest` rodado nesta sessão, **143 passando** (mesmo número
+do checkpoint anterior — os scripts novos ficam fora do pacote testado,
+mesmo padrão dos outros scripts em `scripts/`).
+
 ## Checkpoint 16/09/2026 — Coleta em cascata (motor multi-método), leia aqui primeiro
 
 Sessão grande, focada numa peça nova de arquitetura pedida pelo Samuel: o
@@ -459,27 +583,24 @@ começar a Fase 2 do roadmap).
 - Antes de começar a Fase 2: seguir a seção 4 do CLAUDE.md (plan mode por
   fase) de novo.
 
-**Ainda parado de sessões anteriores, não esquecido, só não é o foco
-agora** (ver seções acima sobre a Gallica pra detalhe completo):
-- Coleta SRU em massa da Gallica parada em 33% (311.750/934.080) — rodar
-  o comando de retomar quando fizer sentido.
-- Baldes de categorização do mapeamento por curadoria da Gallica (46.222
-  itens) ainda precisam de ajuste fino antes de gerar a planilha final.
+**Atualizado no checkpoint 17/09/2026 (sessão 2)** — as duas pendências
+abaixo não estão mais paradas, estão **rodando em segundo plano** (ver
+checkpoint no topo do arquivo pro progresso exato e os arquivos ainda não
+commitados):
+- Coleta SRU em massa da Gallica: retomada, em ~40,5% (378.750/934.427).
+- Baldes de categorização do mapeamento por curadoria: **já ajustados e
+  finalizados**; falta só a tradução terminar (~49,5% feito) pra gerar a
+  planilha final.
 
-## Pergunta em aberto (17/09/2026) — retomar exatamente aqui
+## Pergunta em aberto (17/09/2026) — RESOLVIDA na sessão seguinte
 
 Samuel perguntou "vamos voltar a planilha do Gallica, ela foi terminada?" —
 respondi que não, e expliquei os dois caminhos parados (ver seção acima).
-A pergunta exata que ficou sem resposta dele:
-
-> Quer retomar por aí — os baldes primeiro [conserto do mapeamento por
-> curadoria, 46.222 itens, título+link mas sem metadado] — ou prefere
-> reconsiderar se a coleta SRU (mais completa, com metadado real: autor,
-> ano, domínio público confirmado) não seria melhor caminho do que
-> consertar a curadoria contaminada?
-
-Não decidir sozinho qual dos dois — esperar a escolha dele antes de mexer
-em qualquer um dos dois.
+A pergunta exata que tinha ficado sem resposta era se retomar pelos baldes
+de categorização ou pela coleta SRU — **resposta: os dois, em paralelo**.
+Ver o checkpoint 17/09/2026 (sessão 2) no topo deste arquivo pro estado
+atual de cada um (nenhum dos dois concluído ainda no momento desse
+checkpoint).
 
 ## Como rodar
 
