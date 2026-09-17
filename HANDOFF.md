@@ -1,5 +1,85 @@
 # Buscador e Baixador — estado atual
 
+## Checkpoint 17/09/2026 (sessão 3) — plano de implementação do motor de jobs pronto, leia aqui primeiro
+
+Continuação da sessão 2 (ver logo abaixo pro desenho completo, que não
+mudou). Nesta sessão, a spec virou **plano de implementação** completo,
+via skill `superpowers:writing-plans`.
+
+**Plano escrito, autorrevisado e commitado:**
+`docs/superpowers/plans/2026-09-17-motor-de-jobs.md` — 10 tasks em estilo
+TDD (teste falha → implementa → teste passa → commit), cobrindo **só o
+motor central** (registro de jobs, iniciar/status/parar/retomar,
+notificação nativa do Windows quando um job trava esperando login/
+CAPTCHA) — reaproveitando os comandos que já existem hoje (`cli`,
+`gallica_crawl`, `gallica_enriquecer`, `logar`) como jobs isolados.
+
+**Decisão de escopo tomada nesta sessão, registrada no próprio plano:** o
+plano deliberadamente NÃO cobre o resto do spec (estágios configuráveis
+por job, fluxo de categorização por IA em 3 níveis) — isso fica pra um
+segundo plano, construído em cima do motor central depois dele existir e
+estar testado com jobs de verdade. Motivo: são peças de escopo próprio
+(a peça de estágios depende de refatorar `cli.py`), e o motor sozinho já
+resolve o pedido original (rodar mais de uma tarefa ao mesmo tempo, ver
+progresso, parar/retomar, ser avisado quando travar).
+
+**Autorrevisão do plano encontrou e já corrigiu um bug real antes de
+qualquer código ser escrito:** o comando `iniciar` do `jobs_cli.py` usava
+`nargs="*"` pro argv repassado ao comando de verdade — isso quebraria com
+qualquer flag tipo `--adapter phpbb` (o argparse tentaria interpretar
+`--adapter` como opção do próprio `jobs_cli`, que não existe, e falharia).
+Corrigido pra `nargs=argparse.REMAINDER` no próprio arquivo do plano.
+
+**Decisões técnicas principais do plano** (arquitetura já estava fechada
+na spec; aqui são decisões de implementação):
+- Cada job é lançado por um pequeno processo "executor"
+  (`python -m buscador.jobs_cli _executar <id>`) que roda o comando de
+  verdade e atualiza o registro sozinho quando termina — nenhum processo
+  supervisor permanente.
+- `tasklist`/`taskkill` nativos do Windows pra checar se um processo
+  ainda está vivo e pra matar (com `/T` pra matar a árvore inteira) — sem
+  adicionar `psutil`.
+- Nova dependência: `win11toast` (notificação nativa, sem precisar de
+  admin).
+- Status lê os checkpoints que já existem (`core/checkpoint.py` pro
+  `gallica_crawl`, `core/enriquecimento_lote.py` pro `gallica_enriquecer`)
+  em vez de duplicar o mecanismo de progresso.
+
+**Pergunta em aberto (17/09/2026) — retomar exatamente aqui:** perguntei
+ao Samuel se prefere execução **Subagent-Driven** (um subagente novo por
+task, com revisão entre cada uma) ou **Inline** (executar as tasks nesta
+mesma sessão, em lote, com checkpoints de revisão) — ficou sem resposta
+porque ele pediu `/checkpoint` antes de escolher. Não decidir sozinho —
+perguntar nessa mesma bifurcação antes de começar a implementar qualquer
+task.
+
+**Os dois jobs da Gallica que estavam rodando em paralelo (ver sessão 2)
+— atualização:**
+- **Categorização + tradução do mapeamento por curadoria (46.222 itens):
+  TERMINOU DE VERDADE nesta sessão.** Planilha final gerada em
+  `saidas/gallica_livros_padrao.xlsx` (2,1MB, Índice + 9 abas). Achado
+  real confirmado ao vivo: Google Translate e MyMemory falharam 100% nas
+  46 mil chamadas (rate limit/cota esgotada) — a solução usou a tradução
+  offline (`argostranslate`, fr→en→pt) já existente no projeto. **Duas
+  decisões que ficaram pro Samuel, não decididas sozinhas pelo agente:**
+  (1) os 9.086 itens em "Outros" (majoritariamente jornais/periódicos e
+  artistas visuais) — não força um 9º balde inventado; (2) qualidade da
+  tradução offline é inferior ao Google (alguns títulos pararam em inglês
+  em vez de chegar em português) — resolver isso exigiria esperar a cota
+  do MyMemory resetar ou pagar API, nenhuma das duas decidida ainda.
+  **Nada commitado ainda** — `scripts/categorizar_amostra_gallica.py`
+  (modificado) e `scripts/traduzir_titulos_lote_gallica.py` (novo)
+  continuam no working tree esperando revisão do Samuel.
+- **Coleta SRU da Gallica** (`gallica_crawl`): continua rodando, agora em
+  **492.950 / 934.427 registros (~52,8%)**, atualizado às 23:34:53 UTC de
+  17/09. Ainda não concluída no momento deste checkpoint — uma sessão
+  futura deve checar `saidas/gallica_crawl/dc-type-all-monographie-4d1e657b14/checkpoint.json`
+  de novo, e se ainda não terminou, rodar o mesmo comando de novo (retoma
+  sozinho).
+
+**Testes:** `pytest` rodado nesta sessão, **143 passando** (nada novo
+implementado ainda — o plano só foi escrito, não executado).
+
 ## Checkpoint 17/09/2026 (sessão 2) — desenho do motor de jobs, leia aqui primeiro
 
 Sessão de brainstorming (skill `superpowers:brainstorming`, caminho
