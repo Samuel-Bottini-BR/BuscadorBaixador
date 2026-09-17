@@ -115,9 +115,11 @@ Ordem de tentativa, do mais barato/confiável para o mais caro:
      alternativas só para as vagas que sobraram; cada rodada nova não
      repete o que já foi aprovado nem o que já foi rejeitado. Repete até
      Samuel fechar a lista.
-   - **(b) Classificar cada item** dentro da lista já aprovada, usando os
-     metadados disponíveis (título, autor, ano, idioma — não o conteúdo
-     completo da obra), para gastar o mínimo possível.
+   - **(b) Classificar cada item** dentro da lista já aprovada — ver a
+     cascata de 3 camadas na seção "Backends — classificação item a item"
+     abaixo. Nenhum item fica sem categoria silenciosamente: o que não é
+     resolvido numa camada cai pra próxima; só vira "Outros" explícito se
+     Samuel decidir não gastar mais esforço nele.
 
 ### Nota sobre Fase 4/5 (OCR e catalogação)
 
@@ -130,33 +132,61 @@ categoria/tema/autor com ajuda do OCR, e integrar com seu outro app de
 biblioteca (Fase 5), fica registrada como visão futura, a ser desenhada
 quando a Fase 4 realmente começar.
 
-## Backends de IA — sem API paga em lugar nenhum
+## Backends — sem API paga em lugar nenhum
 
-Tanto a descoberta de categorias (3a) quanto a classificação por item (3b)
-usam um destes dois caminhos, escolhido por Samuel conforme a necessidade —
-**nunca a API paga da Anthropic**:
+**Motivo de excluir a API paga em todo o projeto:** Samuel não tem
+orçamento disponível agora, e usar a assinatura Max via automação não
+supervisionada (ex.: Claude Agent SDK chamado sozinho pelo script) é
+tecnicamente possível mas de uso incerto dentro dos termos do plano — o
+handoff manual evita esse risco por ser sempre uma sessão real, iniciada
+por Samuel.
+
+### Descobrir a lista de categorias (3a)
+
+Usa um destes dois caminhos, escolhido por Samuel conforme a necessidade:
 
 1. **Modelo local (Ollama)** — automático, sem precisar de Samuel presente,
-   gratuito. Estimativa (a confirmar com teste real numa amostra de
-   200-300 itens): um modelo pequeno (~3B parâmetros, ex. Llama 3.2 3B ou
-   Qwen2.5 3B) cabe folgado na GPU de Samuel (GTX 1650, 4GB) e classificaria
-   os 46.222 itens da Gallica em algo como 3-5 horas rodando em lotes,
-   como job de segundo plano.
-2. **Handoff manual via Claude Code** — o job exporta um arquivo (itens +
-   lista de categorias aprovada) e entra em pausa "aguardando classificação
-   manual". Samuel leva esse arquivo a uma sessão de Claude Code, pede a
-   classificação, recebe um arquivo de volta, e roda um comando do motor
-   (`jobs importar-classificacao <job> <arquivo>`) para aplicar o resultado
-   e retomar o job. Gratuito (dentro da assinatura Max de Samuel), mais
-   rápido que o modelo local quando Samuel está disponível para fazer a
-   troca — mas não é "liga e esquece": precisa de atenção de Samuel na hora
-   da troca de arquivo.
+   gratuito.
+2. **Handoff manual via Claude Code** — o job exporta uma amostra do
+   conteúdo e entra em pausa "aguardando decisão de categoria". Samuel leva
+   isso a uma sessão de Claude Code, conduz as rodadas "por exclusão", e
+   aplica a lista aprovada de volta no job.
 
-Motivo de excluir a API paga: Samuel não tem orçamento disponível para
-isso agora, e usar a assinatura Max via automação não supervisionada (ex.:
-Claude Agent SDK chamado sozinho pelo script) é tecnicamente possível mas
-de uso incerto dentro dos termos do plano — o handoff manual evita esse
-risco por ser sempre uma sessão real, iniciada por Samuel.
+Como é só uma amostra pequena (não a coleção inteira), o handoff manual é
+sempre viável aqui, mesmo em coleções grandes.
+
+### Classificar cada item (3b) — cascata de 3 camadas, custo crescente
+
+1. **Regra por palavra-chave (dev-time, reaproveitável).** Alguém (Samuel
+   sozinho, ou com ajuda de uma sessão de Claude Code olhando uma amostra)
+   define um dicionário palavra-chave → categoria pra aquele site. **IA
+   não é obrigatória aqui** — é só a forma mais rápida de chegar num
+   primeiro rascunho bom; a regra em si é só configuração, editável à mão.
+   Uma vez criada, a regra fica salva por site e é **reaproveitada para
+   sempre** — rodar de novo, ou rodar contra itens novos do mesmo site, não
+   passa por IA nenhuma. Roda instantâneo e de graça, não importa o volume
+   (funcionou nos 46.222 itens da Gallica; funcionaria em 460 mil do mesmo
+   jeito). Ponto fraco: o que não bate em nenhuma palavra-chave (na Gallica,
+   ~20% dos itens) não é resolvido nesta camada — passa pra próxima, não
+   fica sem categoria.
+2. **O que sobrou da camada 1 vai pro modelo local (Ollama) ou handoff
+   manual via Claude Code** — a mesma escolha de backend da seção 3a acima,
+   mesmas características (local: automático e grátis, mas lento; manual:
+   rápido e grátis, mas precisa de Samuel presente). A vantagem de aplicar
+   isso só no restante (não na coleção inteira) é que o handoff manual
+   passa a ser viável mesmo em coleções grandes — 20% de 46.222 ainda é
+   bastante (~9 mil), então nesse caso o modelo local seria a escolha mais
+   sensata; num restante menor, o handoff manual vira prático.
+3. **Se mesmo assim algo não for resolvido** (ex.: Samuel decide não gastar
+   mais esforço no restante), cai num **"Outros" explícito** — nunca some
+   silenciosamente, sempre visível como categoria própria na planilha
+   final.
+
+Estimativa de throughput do modelo local (a confirmar com teste real numa
+amostra de 200-300 itens): um modelo pequeno (~3B parâmetros, ex. Llama
+3.2 3B ou Qwen2.5 3B) cabe folgado na GPU de Samuel (GTX 1650, 4GB) e
+classificaria alguns milhares de itens (o tamanho típico do que sobra da
+camada 1) em bem menos tempo do que classificar a coleção inteira do zero.
 
 ## Verificação
 
