@@ -62,17 +62,22 @@ Instituto é **preservar obras** e reviver métodos tradicionais de produção d
   o humano confirma.
 
 **Detalhado em 16/09/2026:**
-- **`core/navegador.py` usa perfil de Chrome de verdade** (já implementado
-  em 16/09/2026, substituindo o desenho anterior de pasta isolada por site
-  em `sessoes_navegador/<site>/`) — um dos perfis que aparecem no seletor
-  "Quem está usando o Chrome?" do próprio Chrome do Samuel, escolhido pelo
-  nome visível (`resolver_perfil`, lê o `Local State` do Chrome pra achar a
-  pasta real). Motivo da troca: a pasta isolada confundia o Samuel na hora
-  de logar (janela sem histórico/favorito, fácil de misturar com pop-up do
-  próprio Chrome). **Ainda falta** (requisito pro dashboard): trocar/
-  escolher esse perfil de dentro do app, em vez de passar o nome direto
-  pro código — hoje `abrir_navegador(nome_perfil, ...)` recebe o nome como
-  parâmetro do chamador.
+- **`core/navegador.py` usa perfil de Chrome ISOLADO** (pasta própria por
+  nome, em `sessoes_navegador/<nome_perfil>/`), não um perfil de verdade
+  do Chrome pessoal do Samuel. **Chegamos a tentar** usar um perfil de
+  verdade (dos que aparecem no seletor "Quem está usando o Chrome?"), a
+  pedido do Samuel — **mas esbarrou numa trava técnica do próprio
+  Chrome**: ele usa um "cadeado de instância única" na pasta raiz inteira
+  (`User Data`), não por perfil, então com o Chrome pessoal do Samuel
+  sempre aberto (ele usa o tempo todo), o Chrome recusa abrir um segundo
+  processo independente apontando pra essa mesma pasta raiz, mesmo pedindo
+  um perfil diferente (`SessionNotCreatedException: Unable to set
+  user_data_dir while starting Chrome`). Voltamos pra pasta isolada — ela
+  tem sua própria raiz só dela, roda ao mesmo tempo que o Chrome pessoal
+  sem esse conflito. **Ainda falta** (requisito pro dashboard): trocar/
+  escolher o nome do perfil isolado de dentro do app, em vez de passar
+  direto pro código — hoje `abrir_navegador(nome_perfil, ...)` recebe o
+  nome como parâmetro do chamador.
 - **Guardar login (email/senha) de um site no backend do app**, só para sites
   que **não impedem login automatizado** (o próprio Samuel definiu essa
   condição), pra reaproveitar depois sem precisar de janela visível toda vez.
@@ -134,7 +139,7 @@ resolver — ver `core/acao_humana.py` para o sinal disso. Métodos conhecidos:
 | API oficial com chave | Primitivas prontas (`acao_humana.py`, `config_sites.py`) | — |
 | Raspagem HTML educada (requisição crua, sem JS) | Pronto (específico); genérico ainda não existe | `PhpbbAdapter` |
 | Login lendo cookie do Chrome normal (`browser_cookie3`) | Pronto, mas **confirmado que não funciona no Chrome atual do Samuel** (ver nota abaixo) | `cookies_navegador.py` |
-| Navegador automatizado (SeleniumBase, headless ou visível, perfil de Chrome de verdade) — resolve JavaScript, login e CAPTCHA | Pronto (`core/navegador.py`), ainda sem adapter real usando | `navegador.py` |
+| Navegador automatizado (SeleniumBase, headless ou visível, perfil de Chrome isolado) — resolve JavaScript, login e CAPTCHA | Pronto (`core/navegador.py`), ainda sem adapter real usando | `navegador.py` |
 | Sem via automatizável (lista manual de códigos) | Reconhecido (caso zvdd.de, seção 12), ainda não formalizado como método da cascata | — |
 
 **Sobre `cookies_navegador.py` (ler login do Chrome):** testado ao vivo em 15/09/2026
