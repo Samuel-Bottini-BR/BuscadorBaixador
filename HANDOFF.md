@@ -414,51 +414,56 @@ aberto no lugar desta.
 
 ## O que falta
 
-**Imediato (retomar exatamente aqui) — teste de login do Internet Archive
-ainda NÃO deu certo, depois de várias tentativas em 16/09/2026:**
-- Item de teste escolhido: `journeypity0000maye` ("The journey and the
-  pity", Pawel Mayewski) — confirmado `access-restricted-item` de verdade
-  (headless sem login mostra "SIGN UP | LOG IN" no topo e área de leitura
-  em branco).
-- **4 tentativas de login na janela visível (`abrir_navegador(headless=False)`)
-  não persistiram** — checado toda vez reabrindo headless depois, sempre
-  ainda deslogado. Motivos identificados nas tentativas (cada um corrigido
-  na tentativa seguinte, mas o login ainda assim não pegou):
-  1ª: Samuel confundiu o pop-up "Fazer login no Chrome" (do navegador) com
-  o login do site. 2ª/3ª: usadas com prazo cronometrado (90s/120s/180s),
-  criando pressa. Um erro de `chromedriver` (crash nativo, provavelmente
-  por reusar `user_data_dir` ainda travado de uma tentativa anterior que
-  não fechou limpo) também apareceu uma vez, mas era esporádico, não a
-  causa raiz. 4ª: Samuel clicou de novo sem querer no ícone de conta do
-  Chrome (canto superior direito), que abre por cima do formulário do
-  site e esconde os campos — mesmo padrão de confusão da 1ª tentativa.
-  Tentei então abrir **sem prazo** (background, sem timeout) — Samuel disse
-  que logou, mas o processo em background travou minha checagem depois (o
-  `taskkill` que usei pra fechar o Chrome não liberou a pasta de perfil a
-  tempo, o `chromedriver` da checagem seguinte deu crash) — **não cheguei a
-  confirmar se esse login específico pegou ou não antes da conversa mudar
-  de rumo.**
-- **No meio disso, o Samuel questionou o desenho do perfil isolado em si**
-  (a pasta `sessoes_navegador/<site>/`, que não aparece em lugar nenhum do
-  Chrome normal dele) — ele quer, em vez disso, um **perfil de Chrome de
-  verdade** (dos que aparecem no seletor "Quem está usando o Chrome?"),
-  que ele possa abrir e logar pela interface normal do Chrome, sem
-  confusão de janela automatizada. **Isso pode ser a causa raiz de boa
-  parte da dificuldade** (interface de automação é mais fácil de confundir
-  que o Chrome normal) — ver decisão nova na seção 6 do `CLAUDE.md`,
-  ainda não implementada. Vale considerar mudar `core/navegador.py` pra
-  usar um perfil de Chrome nomeado de verdade (`--user-data-dir` = pasta
-  real do Chrome do Samuel + `--profile-directory=<nome>`) antes de tentar
-  esse teste de novo, em vez de insistir no desenho atual (pasta isolada
-  separada) que está causando fricção.
-- Também pendente, relacionado: dois requisitos novos anotados na seção 6
-  do `CLAUDE.md` (16/09/2026) — trocar/escolher perfil de dentro do futuro
-  dashboard, e guardar email/senha de site (só os que permitem login
-  automatizado) pra reaproveitar sem janela visível toda vez.
-- Passo 9 do plano da cascata, ainda não feito: `buscador/logar.py`
-  (comando avulso, reaproveita a mesma função de `core/navegador.py` que
-  já existe — pouco código novo). Faz sentido revisar isso junto com a
-  mudança de desenho do perfil acima, não antes.
+**CONFIRMADO em 16/09/2026: o mecanismo de login via navegador automatizado
+funciona ponta a ponta.** Item de teste: `journeypity0000maye` ("The
+journey and the pity", Pawel Mayewski), um `access-restricted-item` real do
+Internet Archive (headless sem login mostra "SIGN UP | LOG IN" no topo e
+área de leitura em branco). Fluxo confirmado: `abrir_navegador('internet_archive',
+headless=False)` → Samuel loga na janela visível pela interface normal do
+site → fechar o processo direito (matar a árvore inteira, não só o
+`chromedriver` — ver lição abaixo) → reabrir `headless=True` → topo já
+mostra "SAMUEL BOTTINI" em vez de "LOG IN", sem fazer nada a mais.
+
+**Caminho até chegar lá (útil pra não repetir os mesmos tropeços):**
+1. Levaram 4 tentativas na janela isolada até o login persistir de
+   verdade — motivos: confundir o pop-up "Fazer login no Chrome" (do
+   navegador) com o login do site; prazo cronometrado curto demais (90-180s)
+   criando pressa; um crash esporádico de `chromedriver` (não era a causa
+   raiz). A instrução que resolveu: deixar claro que a janela é nova/
+   isolada, sem prazo, e avisar explicitamente pra ignorar qualquer pop-up
+   do próprio Chrome sobre conta/sincronização.
+2. **No meio disso, tentamos trocar pra um perfil de Chrome de verdade**
+   (um dos que aparecem no seletor "Quem está usando o Chrome?" do Samuel),
+   a pedido dele, achando que resolveria a confusão — **mas esbarrou numa
+   trava técnica real do Chrome**: ele usa um "cadeado de instância única"
+   na pasta raiz inteira (`User Data`), não por perfil, então com o Chrome
+   pessoal do Samuel sempre aberto, um segundo processo independente
+   (nosso automatizador) é recusado mesmo pedindo um perfil diferente
+   (`SessionNotCreatedException: Unable to set user_data_dir while
+   starting Chrome`). Voltamos pro perfil isolado (que tem raiz própria,
+   sem esse conflito) — era a decisão tecnicamente certa desde o início.
+3. **Lição sobre fechar a janela direito:** matar só o processo do
+   `chromedriver` não mata o Chrome que ele abriu — fica um processo órfão
+   preso na pasta de perfil (`Device or resource busy` ao tentar apagar a
+   pasta depois). Isso pode ter causado confusão em tentativas anteriores
+   (Samuel logando numa janela enquanto uma janela órfã mais antiga era a
+   que eu conferia depois). **Jeito certo de fechar** (usado com sucesso):
+   achar o processo principal via
+   `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like '*sessoes_navegador*<nome>*' -and $_.CommandLine -notlike '*--type=*' }`
+   (o `-notlike '*--type=*'` exclui os processos-filho: gpu-process,
+   renderer, crashpad-handler etc.) e `Stop-Process -Id <esse> -Force` —
+   isso mata a árvore inteira de uma vez.
+
+**Dois requisitos anotados pra depois** (seção 6 do `CLAUDE.md`,
+16/09/2026): trocar/escolher o nome do perfil isolado de dentro do futuro
+dashboard; guardar email/senha de site (só os que permitem login
+automatizado) pra reaproveitar sem janela visível toda vez — o
+armazenamento (`core/config_sites.py`) já serve pra isso, falta só o
+código de preencher/enviar o formulário, que é por site.
+
+**Próximo passo imediato:** passo 9 do plano da cascata, ainda não feito:
+`buscador/logar.py` (comando avulso, reaproveita `resolver_na_mao()` de
+`core/navegador.py`, já confirmado funcionando — pouco código novo).
 
 **Fases futuras do projeto (ver CLAUDE.md seção 10), ainda não começadas:**
 - **Fase 2** — baixar os PDFs marcados (inclusive atrás de login já feito
