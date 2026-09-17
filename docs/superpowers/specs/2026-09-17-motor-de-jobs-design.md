@@ -182,6 +182,25 @@ sempre viável aqui, mesmo em coleções grandes.
    silenciosamente, sempre visível como categoria própria na planilha
    final.
 
+### "Outros" não é beco sem saída — sempre revisitável
+
+Itens em "Outros" continuam com todo o metadado capturado (título, link,
+etc.) — só não têm categoria confiável ainda. A qualquer momento, Samuel
+pode escolher uma destas ações sobre o que está em "Outros" (isoladamente,
+sem precisar reprocessar a coleção inteira):
+
+1. **Reclassificar de novo** — rodar a camada 2 (modelo local ou handoff
+   manual) outra vez, só nos itens que continuam em "Outros".
+2. **Adicionar regra nova e reaplicar** — se um padrão aparecer no que
+   sobrou (ex.: "boa parte é sobre astronomia, faltou balde"), acrescenta
+   uma entrada na regra de palavra-chave daquele site e roda de novo só
+   nesse subconjunto — de graça, sem IA.
+3. **Revisão manual direta** — abrir a planilha/arquivo do "Outros" e
+   classificar linha por linha (Samuel, ou futuramente o Kaique no
+   dashboard) — sem depender de regra nem de IA.
+4. **Deixar como está** — aceitar a fração em "Outros" por ora; nada foi
+   perdido, pode voltar quando quiser.
+
 Estimativa de throughput do modelo local (a confirmar com teste real numa
 amostra de 200-300 itens): um modelo pequeno (~3B parâmetros, ex. Llama
 3.2 3B ou Qwen2.5 3B) cabe folgado na GPU de Samuel (GTX 1650, 4GB) e
