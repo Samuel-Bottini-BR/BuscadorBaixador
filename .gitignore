@@ -15,7 +15,3 @@ saidas/*
 
 # Chave da API da DDB e outras configuracoes locais - nunca commitar
 buscador.local.cfg
-
-# Perfis de Chrome do navegador automatizado (login/sessao por site) -
-# nunca commitar, sao credenciais de sessao, uma pasta por site
-sessoes_navegador/

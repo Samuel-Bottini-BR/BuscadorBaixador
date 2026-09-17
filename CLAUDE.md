@@ -61,13 +61,18 @@ Instituto é **preservar obras** e reviver métodos tradicionais de produção d
 - **Aviso "não confiável":** toda categorização automática vem marcada como palpite;
   o humano confirma.
 
-**Detalhado em 16/09/2026 (ainda não construído, é requisito pro dashboard):**
-- **Trocar/escolher o perfil de navegador de dentro do dashboard** — em vez de
-  mexer em pasta/configuração na mão. Relacionado: hoje (`core/navegador.py`)
-  cada site usa um perfil de Chrome isolado numa pasta própria
-  (`sessoes_navegador/<site>/`); o Samuel pediu que desse pra usar um perfil de
-  Chrome de verdade (dos que aparecem no seletor de perfis do próprio Chrome),
-  não uma pasta escondida — reavaliar esse desenho quando o dashboard existir.
+**Detalhado em 16/09/2026:**
+- **`core/navegador.py` usa perfil de Chrome de verdade** (já implementado
+  em 16/09/2026, substituindo o desenho anterior de pasta isolada por site
+  em `sessoes_navegador/<site>/`) — um dos perfis que aparecem no seletor
+  "Quem está usando o Chrome?" do próprio Chrome do Samuel, escolhido pelo
+  nome visível (`resolver_perfil`, lê o `Local State` do Chrome pra achar a
+  pasta real). Motivo da troca: a pasta isolada confundia o Samuel na hora
+  de logar (janela sem histórico/favorito, fácil de misturar com pop-up do
+  próprio Chrome). **Ainda falta** (requisito pro dashboard): trocar/
+  escolher esse perfil de dentro do app, em vez de passar o nome direto
+  pro código — hoje `abrir_navegador(nome_perfil, ...)` recebe o nome como
+  parâmetro do chamador.
 - **Guardar login (email/senha) de um site no backend do app**, só para sites
   que **não impedem login automatizado** (o próprio Samuel definiu essa
   condição), pra reaproveitar depois sem precisar de janela visível toda vez.
@@ -129,7 +134,7 @@ resolver — ver `core/acao_humana.py` para o sinal disso. Métodos conhecidos:
 | API oficial com chave | Primitivas prontas (`acao_humana.py`, `config_sites.py`) | — |
 | Raspagem HTML educada (requisição crua, sem JS) | Pronto (específico); genérico ainda não existe | `PhpbbAdapter` |
 | Login lendo cookie do Chrome normal (`browser_cookie3`) | Pronto, mas **confirmado que não funciona no Chrome atual do Samuel** (ver nota abaixo) | `cookies_navegador.py` |
-| Navegador automatizado (SeleniumBase, headless ou visível) — resolve JavaScript, login e CAPTCHA | Ainda não construído (próximo passo) | `navegador.py` |
+| Navegador automatizado (SeleniumBase, headless ou visível, perfil de Chrome de verdade) — resolve JavaScript, login e CAPTCHA | Pronto (`core/navegador.py`), ainda sem adapter real usando | `navegador.py` |
 | Sem via automatizável (lista manual de códigos) | Reconhecido (caso zvdd.de, seção 12), ainda não formalizado como método da cascata | — |
 
 **Sobre `cookies_navegador.py` (ler login do Chrome):** testado ao vivo em 15/09/2026
