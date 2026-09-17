@@ -461,9 +461,16 @@ automatizado) pra reaproveitar sem janela visível toda vez — o
 armazenamento (`core/config_sites.py`) já serve pra isso, falta só o
 código de preencher/enviar o formulário, que é por site.
 
-**Próximo passo imediato:** passo 9 do plano da cascata, ainda não feito:
-`buscador/logar.py` (comando avulso, reaproveita `resolver_na_mao()` de
-`core/navegador.py`, já confirmado funcionando — pouco código novo).
+**As 11 fatias do plano de coleta em cascata estão todas feitas** (incluindo
+o passo 9, `buscador/logar.py` — comando avulso, reaproveita
+`resolver_na_mao()`, já confirmado funcionando). Plano completo salvo em
+`C:\Users\fotog\.claude\plans\eu-quero-escrever-um-mighty-octopus.md`.
+143 testes passando. **Próximo passo em aberto:** não há mais nenhum passo
+do plano original pendente — decidir com o Samuel o que vem a seguir (ex.:
+um segundo site real usando a cascata de verdade — Internet Archive hoje só
+usa o método de API; testar o método do navegador automatizado dentro de um
+adapter de verdade ainda não aconteceu, só testado solto/manualmente; ou
+começar a Fase 2 do roadmap).
 
 **Fases futuras do projeto (ver CLAUDE.md seção 10), ainda não começadas:**
 - **Fase 2** — baixar os PDFs marcados (inclusive atrás de login já feito
