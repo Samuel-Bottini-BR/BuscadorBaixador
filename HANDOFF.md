@@ -11,7 +11,7 @@ executado em "modo automático" combinado só pra esse plano) está salvo em
 (fora deste repositório — é um arquivo do Claude Code, não do projeto,
 pode não existir mais numa máquina diferente). Resumo do que importa:
 
-**Arquitetura nova, construída e testada (`pytest` passando — 141 testes,
+**Arquitetura nova, construída e testada (`pytest` passando — 143 testes,
 antes eram 103):**
 - `core/acao_humana.py` — sinal `AcaoHumanaNecessaria` (tipos: chave de
   API, login, CAPTCHA) pra um método dizer "preciso do Samuel" em vez de
@@ -110,36 +110,14 @@ adaptador real:**
 - `archive.org` entrou em `REPO_HOSTS` de `core/verificacao_links.py`
   (mesmo tratamento da Gallica).
 
-**Pendência exata, em aberto agora — retomar exatamente aqui:**
-O Samuel pediu pra testar também o caminho de login de verdade: escolher
-de propósito um item `access-restricted-item` do Internet Archive
-(empréstimo) e testar o navegador automatizado abrindo, travando por
-falta de login, abrindo janela visível, o Samuel logando, e confirmando
-que a sessão salva funciona depois em modo headless — o mesmo teste que já
-foi feito com sucesso no Scribd (antes de descobrir que o Scribd era
-proibido) e que falhou na primeira tentativa por confusão de instrução
-(ver mais abaixo). **Ainda não escolhi um identifier de item
-access-restricted de verdade pra esse teste** — precisa buscar um (ex.:
-`access-restricted-item:true AND mediatype:texts` na Advanced Search API)
-antes de continuar. O Samuel disse "loguei agora" bem no fim da sessão,
-mas **não ficou claro se ele logou no Chrome pessoal dele (arquive.org,
-site normal) ou se era só um sinal de que está pronto pra fazer o login
-de verdade dentro da janela do navegador automatizado quando a sessão
-retomar** — como decidimos não usar o Chrome pessoal dele pra automação
-(ver decisões acima), logar lá não ajuda diretamente; **perguntar isso
-antes de prosseguir** com o teste.
+**Teste de login end-to-end: CONFIRMADO funcionando** (não ficou pendente —
+ver detalhe completo na seção "O que falta", mais abaixo, incluindo as
+lições sobre confundir pop-up do Chrome com login do site, e sobre matar o
+processo certo pra não deixar janela órfã).
 
-**Lição aprendida do teste com o Scribd (útil pra próxima vez que abrir
-uma janela visível pra login):** na primeira tentativa, o Samuel viu a
-janela abrir mas não conseguiu logar a tempo — ele confundiu um pop-up do
-**Chrome** ("Fazer login no Chrome", sobre sincronizar conta Google) com o
-login do **site**. Da próxima vez, ser mais explícito nas instruções sobre
-onde clicar (o botão de login do site em si, não qualquer pop-up do
-navegador que aparecer), e dar tempo generoso (~90s funcionou melhor que 60s).
-
-**`git`:** branch `feat/fase1-mapeador`, 5 commits novos nesta sessão
-(`7cd0bc6` até `ea1012b`), todos com `pytest` passando antes de cada
-commit, todos já enviados (`git push`) pro GitHub.
+**`git`:** branch `feat/fase1-mapeador`, 13 commits nesta sessão (`7cd0bc6`
+até `9b2e3af`), todos com `pytest` passando antes de cada commit, todos já
+enviados (`git push`) pro GitHub.
 
 ## O que é e para quem
 
@@ -168,7 +146,7 @@ dropdown de avaliação, no mesmo estilo do `Garimpo_GSM_MESTRE_VERIFICADO.xlsx`
 
 - Repositório: https://github.com/Samuel-Bottini-BR/BuscadorBaixador
   (branch de trabalho: `feat/fase1-mapeador`; commit mais recente em
-  16/09/2026: `ea1012b`, `pytest` passando — **141 testes** hoje, ver
+  17/09/2026: `9b2e3af`, `pytest` passando — **143 testes** hoje, ver
   checkpoint 16/09/2026 no topo deste arquivo pra o que mudou desde então).
 - Pacote Python instalável (`pyproject.toml`, `src/buscador/`), `.venv` com
   Python 3.12 (instalado à parte do 3.14 global, por causa do `argostranslate`).
@@ -487,6 +465,21 @@ agora** (ver seções acima sobre a Gallica pra detalhe completo):
   o comando de retomar quando fizer sentido.
 - Baldes de categorização do mapeamento por curadoria da Gallica (46.222
   itens) ainda precisam de ajuste fino antes de gerar a planilha final.
+
+## Pergunta em aberto (17/09/2026) — retomar exatamente aqui
+
+Samuel perguntou "vamos voltar a planilha do Gallica, ela foi terminada?" —
+respondi que não, e expliquei os dois caminhos parados (ver seção acima).
+A pergunta exata que ficou sem resposta dele:
+
+> Quer retomar por aí — os baldes primeiro [conserto do mapeamento por
+> curadoria, 46.222 itens, título+link mas sem metadado] — ou prefere
+> reconsiderar se a coleta SRU (mais completa, com metadado real: autor,
+> ano, domínio público confirmado) não seria melhor caminho do que
+> consertar a curadoria contaminada?
+
+Não decidir sozinho qual dos dois — esperar a escolha dele antes de mexer
+em qualquer um dos dois.
 
 ## Como rodar
 
