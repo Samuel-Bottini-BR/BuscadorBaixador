@@ -414,16 +414,51 @@ aberto no lugar desta.
 
 ## O que falta
 
-**Imediato (retomar exatamente aqui, ver checkpoint 16/09/2026 no topo):**
-1. Perguntar ao Samuel onde ele logou ("Chrome pessoal" vs "pronto pra
-   logar na janela automatizada") antes de continuar.
-2. Achar um identifier real de item `access-restricted-item:true` do
-   Internet Archive pra testar o fluxo de login de verdade.
-3. Testar: navegador headless trava por falta de login → abre janela
-   visível → Samuel loga → sessão salva → headless funciona depois.
-4. Passo 9 do plano da cascata, ainda não feito: `buscador/logar.py`
-   (comando avulso, reaproveita a mesma função de `core/navegador.py` que
-   já existe — pouco código novo).
+**Imediato (retomar exatamente aqui) — teste de login do Internet Archive
+ainda NÃO deu certo, depois de várias tentativas em 16/09/2026:**
+- Item de teste escolhido: `journeypity0000maye` ("The journey and the
+  pity", Pawel Mayewski) — confirmado `access-restricted-item` de verdade
+  (headless sem login mostra "SIGN UP | LOG IN" no topo e área de leitura
+  em branco).
+- **4 tentativas de login na janela visível (`abrir_navegador(headless=False)`)
+  não persistiram** — checado toda vez reabrindo headless depois, sempre
+  ainda deslogado. Motivos identificados nas tentativas (cada um corrigido
+  na tentativa seguinte, mas o login ainda assim não pegou):
+  1ª: Samuel confundiu o pop-up "Fazer login no Chrome" (do navegador) com
+  o login do site. 2ª/3ª: usadas com prazo cronometrado (90s/120s/180s),
+  criando pressa. Um erro de `chromedriver` (crash nativo, provavelmente
+  por reusar `user_data_dir` ainda travado de uma tentativa anterior que
+  não fechou limpo) também apareceu uma vez, mas era esporádico, não a
+  causa raiz. 4ª: Samuel clicou de novo sem querer no ícone de conta do
+  Chrome (canto superior direito), que abre por cima do formulário do
+  site e esconde os campos — mesmo padrão de confusão da 1ª tentativa.
+  Tentei então abrir **sem prazo** (background, sem timeout) — Samuel disse
+  que logou, mas o processo em background travou minha checagem depois (o
+  `taskkill` que usei pra fechar o Chrome não liberou a pasta de perfil a
+  tempo, o `chromedriver` da checagem seguinte deu crash) — **não cheguei a
+  confirmar se esse login específico pegou ou não antes da conversa mudar
+  de rumo.**
+- **No meio disso, o Samuel questionou o desenho do perfil isolado em si**
+  (a pasta `sessoes_navegador/<site>/`, que não aparece em lugar nenhum do
+  Chrome normal dele) — ele quer, em vez disso, um **perfil de Chrome de
+  verdade** (dos que aparecem no seletor "Quem está usando o Chrome?"),
+  que ele possa abrir e logar pela interface normal do Chrome, sem
+  confusão de janela automatizada. **Isso pode ser a causa raiz de boa
+  parte da dificuldade** (interface de automação é mais fácil de confundir
+  que o Chrome normal) — ver decisão nova na seção 6 do `CLAUDE.md`,
+  ainda não implementada. Vale considerar mudar `core/navegador.py` pra
+  usar um perfil de Chrome nomeado de verdade (`--user-data-dir` = pasta
+  real do Chrome do Samuel + `--profile-directory=<nome>`) antes de tentar
+  esse teste de novo, em vez de insistir no desenho atual (pasta isolada
+  separada) que está causando fricção.
+- Também pendente, relacionado: dois requisitos novos anotados na seção 6
+  do `CLAUDE.md` (16/09/2026) — trocar/escolher perfil de dentro do futuro
+  dashboard, e guardar email/senha de site (só os que permitem login
+  automatizado) pra reaproveitar sem janela visível toda vez.
+- Passo 9 do plano da cascata, ainda não feito: `buscador/logar.py`
+  (comando avulso, reaproveita a mesma função de `core/navegador.py` que
+  já existe — pouco código novo). Faz sentido revisar isso junto com a
+  mudança de desenho do perfil acima, não antes.
 
 **Fases futuras do projeto (ver CLAUDE.md seção 10), ainda não começadas:**
 - **Fase 2** — baixar os PDFs marcados (inclusive atrás de login já feito

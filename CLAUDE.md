@@ -61,6 +61,23 @@ Instituto é **preservar obras** e reviver métodos tradicionais de produção d
 - **Aviso "não confiável":** toda categorização automática vem marcada como palpite;
   o humano confirma.
 
+**Detalhado em 16/09/2026 (ainda não construído, é requisito pro dashboard):**
+- **Trocar/escolher o perfil de navegador de dentro do dashboard** — em vez de
+  mexer em pasta/configuração na mão. Relacionado: hoje (`core/navegador.py`)
+  cada site usa um perfil de Chrome isolado numa pasta própria
+  (`sessoes_navegador/<site>/`); o Samuel pediu que desse pra usar um perfil de
+  Chrome de verdade (dos que aparecem no seletor de perfis do próprio Chrome),
+  não uma pasta escondida — reavaliar esse desenho quando o dashboard existir.
+- **Guardar login (email/senha) de um site no backend do app**, só para sites
+  que **não impedem login automatizado** (o próprio Samuel definiu essa
+  condição), pra reaproveitar depois sem precisar de janela visível toda vez.
+  O armazenamento já existe hoje (`core/config_sites.py` + `buscador.local.cfg`,
+  já usado pra chave de API — mesmo mecanismo serve pra `email`/`senha` por
+  site, sem mudar nada). **O que falta**: o código que pega essa credencial
+  guardada e preenche/envia o formulário de login sozinho — isso é
+  específico de cada site (nomes de campo, botão, 2FA variam), não dá pra
+  fazer genérico; construir por adapter, quando algum precisar disso.
+
 ## 7. Regra de acesso a cada site (árvore de decisão)
 Para cada site, decida **como** acessar, nesta ordem, **me avisando da escolha**:
 1. **Leia o `robots.txt`.**
