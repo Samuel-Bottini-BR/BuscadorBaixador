@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Dar ao BuscadorBaixador um motor que roda os comandos já existentes (`cli`, `gallica_crawl`, `gallica_enriquecer`, `logar`) como jobs isolados em segundo plano — iniciar sem terminal manual, ver status/progresso, parar, retomar, e ser avisado (notificação do Windows) quando um job trava esperando ação humana.
+**Goal:** Dar ao BuscadorBaixador um motor que roda os comandos já existentes (`cli`, `gallica_crawl`, `gallica_enriquecer`) como jobs isolados e destacados da sessão, em segundo plano — iniciar sem terminal manual, ver status/progresso, parar, retomar, e ser avisado (notificação do Windows) quando um job trava esperando ação humana.
 
-**Architecture:** Subprocessos + registro em JSON (`jobs/registro.json`), escrita atômica no mesmo padrão de `core/checkpoint.py`. Cada job é lançado através de um pequeno processo "executor" (`python -m buscador.jobs_cli _executar <id>`) que roda o comando de verdade, espera terminar, e atualiza o registro sozinho — sem nenhum processo supervisor permanente. Ver desenho completo em `docs/superpowers/specs/2026-09-17-motor-de-jobs-design.md`.
+**Architecture:** Subprocessos + registro em JSON (`jobs/registro.json`), escrita atômica no mesmo padrão de `core/checkpoint.py`. Cada job é lançado através de um pequeno processo "executor" **destacado da sessão** (`python -m buscador.core.jobs_executor <id> <registro>`, com `DETACHED_PROCESS`) que roda o comando de verdade, espera terminar, e atualiza o registro sozinho — sem nenhum processo supervisor permanente. Destacar é essencial: a coleta da Gallica de 17/09 morreu junto com a sessão do Claude Code que a tinha lançado como processo filho. Ver desenho completo em `docs/superpowers/specs/2026-09-17-motor-de-jobs-design.md`.
 
 **Tech Stack:** Python 3.11/3.12 (venv existente), `subprocess`/`tasklist`/`taskkill` nativos do Windows (sem `psutil`), `win11toast` (nova dependência, notificação nativa).
 
@@ -17,6 +17,8 @@
 - Qualquer arquivo de estado persistente (registro de jobs) usa escrita atômica: grava em `.tmp` e troca com `os.replace`, igual `core/checkpoint.py`.
 - Comentários em português, estilo pedagógico já usado no projeto (explica o conceito não óbvio, não o óbvio) — todo o pacote já segue essa convenção.
 - `requires-python = ">=3.11,<3.13"` (já fixado em `pyproject.toml`) — pode usar `list[str]`, `str | None`, etc.
+- O comando `logar` fica **fora** do motor: ele é interativo (espera o Samuel apertar Enter no terminal) e um job roda sem terminal/stdin. O mesmo vale pra `gallica_crawl --reiniciar` (pede confirmação digitada) — não usar via motor.
+- O processo executor de um job é separado do que o iniciou: qualquer informação de que o executor precise (ex.: qual módulo Python rodar) tem que estar gravada no registro em disco, nunca só em memória do processo pai.
 - Este plano cobre só o **motor central** (iniciar/status/parar/retomar/notificar) reaproveitando os comandos que já existem hoje. O sistema de estágios configuráveis por job e o fluxo de categorização por IA (native → trilha → IA em cascata) ficam para um plano seguinte, construído em cima deste motor — ver nota de escopo abaixo.
 
 ## Nota de escopo (por que este plano não cobre o spec inteiro)
@@ -39,7 +41,7 @@ ser avisado quando travar") usando os comandos que já existem hoje.
 - Test: `tests/test_jobs_registro.py`
 
 **Interfaces:**
-- Produces: `JobRegistrado` (dataclass: `id: str`, `modulo: str`, `argv: list[str]`, `pid: int`, `estado: str`, `log_path: str`, `iniciado_em: str = ""`, `atualizado_em: str = ""`), `CAMINHO_PADRAO: Path`, `novo_id(modulo: str) -> str`, `carregar_registro(caminho: Path = CAMINHO_PADRAO) -> list[JobRegistrado]`, `salvar_registro(jobs: list[JobRegistrado], caminho: Path = CAMINHO_PADRAO) -> None`, `adicionar_job(job: JobRegistrado, caminho: Path = CAMINHO_PADRAO) -> None`, `atualizar_job(id: str, caminho: Path = CAMINHO_PADRAO, **mudancas) -> JobRegistrado` (levanta `ValueError` se o id não existir).
+- Produces: `JobRegistrado` (dataclass: `id: str`, `modulo: str`, `argv: list[str]`, `pid: int`, `estado: str`, `log_path: str`, `iniciado_em: str = ""`, `atualizado_em: str = ""`, `alvo: str = ""` — o módulo Python de verdade que o executor roda, ex. `"buscador.gallica_crawl"`), `CAMINHO_PADRAO: Path`, `novo_id(modulo: str) -> str`, `carregar_registro(caminho: Path = CAMINHO_PADRAO) -> list[JobRegistrado]`, `salvar_registro(jobs: list[JobRegistrado], caminho: Path = CAMINHO_PADRAO) -> None`, `adicionar_job(job: JobRegistrado, caminho: Path = CAMINHO_PADRAO) -> None`, `atualizar_job(id: str, caminho: Path = CAMINHO_PADRAO, **mudancas) -> JobRegistrado` (levanta `ValueError` se o id não existir).
 
 - [ ] **Step 1: Escrever os testes (todos de uma vez, já que são pequenos e do mesmo arquivo)**
 
@@ -62,7 +64,7 @@ def _job_de_teste(id="job-teste"):
     return JobRegistrado(
         id=id, modulo="gallica_crawl", argv=['dc.type all "monographie"'],
         pid=1234, estado="rodando", log_path="jobs/job-teste/log.txt",
-        iniciado_em="2026-09-17T00:00:00+00:00",
+        iniciado_em="2026-09-17T00:00:00+00:00", alvo="buscador.gallica_crawl",
     )
 
 
@@ -80,6 +82,7 @@ def test_salvar_e_carregar_registro_ida_e_volta(tmp_path):
     assert len(jobs) == 1
     assert jobs[0].id == "job-teste"
     assert jobs[0].modulo == "gallica_crawl"
+    assert jobs[0].alvo == "buscador.gallica_crawl"
 
 
 def test_salvar_nao_deixa_arquivo_tmp_para_tras(tmp_path):
@@ -157,13 +160,17 @@ CAMINHO_PADRAO = Path(__file__).resolve().parent.parent.parent.parent / "jobs" /
 @dataclass
 class JobRegistrado:
     id: str
-    modulo: str  # "cli" | "gallica_crawl" | "gallica_enriquecer" | "logar"
+    modulo: str  # "cli" | "gallica_crawl" | "gallica_enriquecer"
     argv: list[str]
     pid: int
     estado: str  # "rodando" | "concluido" | "erro" | "parado" | "interrompido"
     log_path: str
     iniciado_em: str = ""
     atualizado_em: str = ""
+    alvo: str = ""
+    # o modulo Python de verdade que o executor roda (ex.: "buscador.gallica_crawl").
+    # Gravado aqui porque o executor e um processo separado: so enxerga o que
+    # esta em disco, nunca a memoria de quem iniciou o job.
 
 
 def novo_id(modulo: str) -> str:
@@ -256,6 +263,8 @@ Expected: instala `win11toast` sem erro.
 ```python
 # -*- coding: utf-8 -*-
 # tests/test_jobs_notificacoes.py
+import time
+
 from buscador.core import jobs_notificacoes
 
 
@@ -269,6 +278,26 @@ def test_avisar_windows_chama_notify_com_titulo_e_mensagem(monkeypatch):
     jobs_notificacoes.avisar_windows("Job travado", "Precisa fazer login no Internet Archive")
 
     assert chamadas == [("Job travado", "Precisa fazer login no Internet Archive")]
+
+
+def test_avisar_windows_nao_fica_esperando_se_o_aviso_bloquear(monkeypatch):
+    # o notify da biblioteca pode ficar esperando o usuario fechar o balao;
+    # um job nao pode ficar pendurado por causa disso
+    monkeypatch.setattr(jobs_notificacoes, "notify", lambda titulo, mensagem: time.sleep(5))
+    monkeypatch.setattr(jobs_notificacoes, "ESPERA_MAXIMA_SEGUNDOS", 0.2)
+
+    inicio = time.time()
+    jobs_notificacoes.avisar_windows("Job travado", "qualquer mensagem")
+
+    assert time.time() - inicio < 2
+
+
+def test_avisar_windows_nao_propaga_erro_do_windows(monkeypatch):
+    def notify_que_falha(titulo, mensagem):
+        raise RuntimeError("sem suporte a notificacao")
+    monkeypatch.setattr(jobs_notificacoes, "notify", notify_que_falha)
+
+    jobs_notificacoes.avisar_windows("Job travado", "qualquer mensagem")  # nao pode levantar
 ```
 
 - [ ] **Step 3: Rodar o teste e confirmar que falha**
@@ -285,20 +314,38 @@ Dispara uma notificacao nativa do Windows (o balao que aparece no canto da
 tela) quando um job precisa da atencao do Samuel. Usa win11toast, que nao
 precisa de nenhuma configuracao especial nem permissao de administrador.
 """
+import threading
+
 from win11toast import notify
+
+ESPERA_MAXIMA_SEGUNDOS = 3.0
+
+
+def _mostrar(titulo: str, mensagem: str) -> None:
+    try:
+        notify(titulo, mensagem)
+    except Exception:
+        # o aviso e so uma cortesia: se o Windows nao conseguir mostrar
+        # (sem suporte, erro interno), o job nao pode quebrar por causa disso
+        pass
 
 
 def avisar_windows(titulo: str, mensagem: str) -> None:
     """Mostra uma notificacao do Windows com o titulo e a mensagem dados.
     Chamado sempre que um job entra num estado que precisa da atencao do
-    Samuel (hoje: login/CAPTCHA/chave de API -- ver core/acao_humana.py)."""
-    notify(titulo, mensagem)
+    Samuel (hoje: login/CAPTCHA/chave de API -- ver core/acao_humana.py).
+    Roda numa thread com tempo maximo de espera: dependendo da versao, o
+    notify() da biblioteca pode ficar esperando o usuario fechar o balao, e
+    um job nao pode ficar pendurado indefinidamente por causa disso."""
+    thread = threading.Thread(target=_mostrar, args=(titulo, mensagem), daemon=True)
+    thread.start()
+    thread.join(timeout=ESPERA_MAXIMA_SEGUNDOS)
 ```
 
 - [ ] **Step 5: Rodar o teste e confirmar que passa**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_notificacoes.py -v`
-Expected: `1 passed`
+Expected: `3 passed`
 
 - [ ] **Step 6: Commit**
 
@@ -313,12 +360,15 @@ git commit -m "feat: notificacao nativa do Windows pro motor de jobs"
 
 **Files:**
 - Create: `src/buscador/core/jobs_motor.py`
+- Create: `src/buscador/core/jobs_executor.py`
 - Create: `tests/fixtures/job_fake.py`
 - Test: `tests/test_jobs_motor.py`
 
 **Interfaces:**
-- Consumes: `JobRegistrado`, `CAMINHO_PADRAO`, `adicionar_job`, `atualizar_job`, `carregar_registro`, `novo_id` (de `buscador.core.jobs_registro`, Task 1)
-- Produces: `MODULOS_PERMITIDOS: dict[str, str]`, `PASTA_JOBS: Path`, `SAIDAS: Path`, `iniciar_job(modulo: str, argv: list[str], caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado`, `executar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> None`
+- Consumes: `JobRegistrado` (inclui o campo `alvo`), `CAMINHO_PADRAO`, `adicionar_job`, `atualizar_job`, `carregar_registro`, `novo_id` (de `buscador.core.jobs_registro`, Task 1)
+- Produces: `MODULOS_PERMITIDOS: dict[str, str]`, `PASTA_JOBS: Path`, `SAIDAS: Path`, `iniciar_job(modulo: str, argv: list[str], caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado`, `executar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> None`, `_lancar_destacado(comando: list[str]) -> subprocess.Popen`; e o ponto de entrada do processo executor: `python -m buscador.core.jobs_executor <id_job> <caminho_registro>`.
+
+**Por que o campo `alvo` e o módulo `jobs_executor` existem (decisões de revisão do plano):** o executor roda num processo separado do que chamou `iniciar_job`, então ele não enxerga nada que um teste (ou qualquer código) tenha alterado em memória no processo pai — por isso `iniciar_job` grava no registro o módulo Python que será de fato executado (`alvo`), e o executor só lê isso. E o executor é um módulo próprio (`jobs_executor`), não um subcomando do `jobs_cli` (Task 8), pra `iniciar_job` já funcionar de ponta a ponta nesta task, sem depender de uma task futura.
 
 - [ ] **Step 1: Criar o script fixture usado só pelos testes**
 
@@ -345,11 +395,14 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 2: Escrever os testes de `executar_job`**
+- [ ] **Step 2: Escrever os testes**
 
 ```python
 # -*- coding: utf-8 -*-
 # tests/test_jobs_motor.py
+import subprocess
+import time
+
 from buscador.core import jobs_motor
 from buscador.core.jobs_registro import JobRegistrado, carregar_registro, salvar_registro
 
@@ -396,6 +449,46 @@ def test_executar_job_grava_a_saida_do_comando_no_log(tmp_path, monkeypatch):
     jobs_motor.executar_job("job-1", caminho_registro)
 
     assert "job_fake rodou" in caminho_log.read_text(encoding="utf-8")
+
+
+def test_iniciar_job_de_ponta_a_ponta_o_executor_separado_roda_e_conclui(tmp_path, monkeypatch):
+    caminho_registro = tmp_path / "registro.json"
+    monkeypatch.setitem(jobs_motor.MODULOS_PERMITIDOS, "echo_teste", "tests.fixtures.job_fake")
+    monkeypatch.setattr(jobs_motor, "PASTA_JOBS", tmp_path / "jobs")
+
+    job = jobs_motor.iniciar_job("echo_teste", [], caminho_registro)
+
+    assert job.pid != 0
+    assert job.alvo == "tests.fixtures.job_fake"
+    prazo = time.time() + 20
+    estado = "rodando"
+    while time.time() < prazo and estado == "rodando":
+        time.sleep(0.3)
+        estado = [j for j in carregar_registro(caminho_registro) if j.id == job.id][0].estado
+    assert estado == "concluido"
+
+
+def test_lancar_destacado_tenta_de_novo_sem_breakaway_se_o_windows_negar(monkeypatch):
+    chamadas = []
+
+    class ProcessoFalso:
+        pid = 4242
+
+    def popen_falso(comando, creationflags=0, **kwargs):
+        chamadas.append(creationflags)
+        if creationflags & subprocess.CREATE_BREAKAWAY_FROM_JOB:
+            raise PermissionError("acesso negado")
+        return ProcessoFalso()
+
+    monkeypatch.setattr(subprocess, "Popen", popen_falso)
+
+    processo = jobs_motor._lancar_destacado(["qualquer"])
+
+    assert processo.pid == 4242
+    assert len(chamadas) == 2
+    assert chamadas[0] & subprocess.CREATE_BREAKAWAY_FROM_JOB
+    assert not chamadas[1] & subprocess.CREATE_BREAKAWAY_FROM_JOB
+    assert chamadas[1] & subprocess.DETACHED_PROCESS
 ```
 
 - [ ] **Step 3: Rodar os testes e confirmar que falham**
@@ -403,10 +496,11 @@ def test_executar_job_grava_a_saida_do_comando_no_log(tmp_path, monkeypatch):
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
 Expected: `ModuleNotFoundError: No module named 'buscador.core.jobs_motor'`
 
-- [ ] **Step 4: Implementar `jobs_motor.py` (parte 1 — iniciar/executar)**
+- [ ] **Step 4: Implementar `jobs_motor.py` (parte 1 — iniciar/executar) e `jobs_executor.py`**
 
 ```python
 # -*- coding: utf-8 -*-
+# src/buscador/core/jobs_motor.py
 """
 O motor de verdade: sabe iniciar um job como processo separado do Windows,
 checar se ainda esta vivo, parar, e reaproveitar o progresso salvo (via
@@ -415,7 +509,9 @@ crashar nunca derruba o motor nem os outros jobs, porque nao existe
 nenhum processo "supervisor" ligado o tempo todo (ver o desenho em
 docs/superpowers/specs/2026-09-17-motor-de-jobs-design.md).
 """
+import json
 import math
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -432,7 +528,6 @@ from buscador.core.jobs_registro import (
     carregar_registro,
     novo_id,
 )
-import json
 
 RAIZ_PROJETO = Path(__file__).resolve().parent.parent.parent.parent
 PASTA_JOBS = RAIZ_PROJETO / "jobs"
@@ -442,18 +537,43 @@ MODULOS_PERMITIDOS = {
     "cli": "buscador.cli",
     "gallica_crawl": "buscador.gallica_crawl",
     "gallica_enriquecer": "buscador.gallica_enriquecer",
-    "logar": "buscador.logar",
 }
 # lista fechada de proposito -- iniciar um modulo que nao esteja aqui e um
-# erro claro, em vez do motor rodar qualquer comando arbitrario do sistema
+# erro claro, em vez do motor rodar qualquer comando arbitrario do sistema.
+# "logar" fica de fora de proposito: ele e interativo (espera o Samuel
+# apertar Enter no terminal), e um job roda sem terminal nenhum.
+
+_FLAGS_DESTACADO = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+# DETACHED_PROCESS: o processo novo nao herda o terminal de quem o lancou;
+# CREATE_NEW_PROCESS_GROUP: vira lider de um grupo proprio de processos
+
+
+def _lancar_destacado(comando: list[str]) -> subprocess.Popen:
+    """Lanca um processo que continua vivo mesmo se quem o lancou (o
+    terminal, ou a conversa do Claude Code) for fechado -- foi exatamente
+    o que faltou na coleta da Gallica que morreu junto com a sessao. Tenta
+    primeiro tambem sair do "job object" do Windows de quem lancou
+    (CREATE_BREAKAWAY_FROM_JOB); se o Windows negar (o pai nao permite),
+    tenta de novo sem isso."""
+    argumentos = dict(
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )
+    try:
+        return subprocess.Popen(
+            comando, creationflags=_FLAGS_DESTACADO | subprocess.CREATE_BREAKAWAY_FROM_JOB,
+            **argumentos,
+        )
+    except OSError:
+        return subprocess.Popen(comando, creationflags=_FLAGS_DESTACADO, **argumentos)
 
 
 def iniciar_job(modulo: str, argv: list[str], caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado:
     """Inicia um job novo: cria a pasta de log dele, e lanca um processo
-    "executor" (rodando em segundo plano, separado deste) responsavel por
-    rodar o comando de verdade e atualizar o registro quando terminar. O
-    motor guarda o PID desse executor -- pare-lo (parar_job) mata o
-    executor e o comando real junto, porque um e processo-filho do outro."""
+    "executor" (destacado, separado deste) responsavel por rodar o comando
+    de verdade e atualizar o registro quando terminar. O motor guarda o PID
+    desse executor -- pare-lo (parar_job) mata o executor e o comando real
+    junto, porque um e processo-filho do outro."""
     if modulo not in MODULOS_PERMITIDOS:
         raise ValueError(
             f"Modulo '{modulo}' nao e um job conhecido. Opcoes: {sorted(MODULOS_PERMITIDOS)}"
@@ -467,19 +587,17 @@ def iniciar_job(modulo: str, argv: list[str], caminho_registro: Path = CAMINHO_P
     job = JobRegistrado(
         id=id_job, modulo=modulo, argv=list(argv), pid=0, estado="rodando",
         log_path=str(caminho_log), iniciado_em=datetime.now(timezone.utc).isoformat(),
+        alvo=MODULOS_PERMITIDOS[modulo],
+        # o modulo Python de verdade fica gravado no registro: o executor e
+        # um processo separado e so enxerga o que esta em disco
     )
     adicionar_job(job, caminho_registro)
     # grava o job no registro ANTES de lancar o processo executor -- assim,
     # mesmo que o lancamento falhe, o registro nao fica com um job
     # "fantasma" que o executor nunca chegou a ver
 
-    processo = subprocess.Popen(
-        [sys.executable, "-m", "buscador.jobs_cli", "--registro", str(caminho_registro),
-         "_executar", id_job],
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-        # cria um novo "grupo" de processo -- necessario no Windows pra
-        # conseguir depois matar o executor e os processos-filho dele
-        # de uma vez so (ver parar_job)
+    processo = _lancar_destacado(
+        [sys.executable, "-m", "buscador.core.jobs_executor", id_job, str(caminho_registro)]
     )
     return atualizar_job(id_job, caminho_registro, pid=processo.pid)
 
@@ -488,30 +606,64 @@ def executar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> None:
     """Roda DENTRO do processo executor (lancado por iniciar_job): executa
     o comando de verdade do job, esperando ele terminar, e atualiza o
     registro com o resultado. Nunca deve ser chamado diretamente -- so via
-    'python -m buscador.jobs_cli _executar <id>'."""
+    'python -m buscador.core.jobs_executor <id> <registro>'."""
     jobs = {job.id: job for job in carregar_registro(caminho_registro)}
     job = jobs.get(id_job)
     if job is None:
         raise ValueError(f"Nenhum job encontrado com id '{id_job}'")
 
-    comando = [sys.executable, "-m", MODULOS_PERMITIDOS[job.modulo], *job.argv]
+    alvo = job.alvo or MODULOS_PERMITIDOS[job.modulo]
+    comando = [sys.executable, "-m", alvo, *job.argv]
+    ambiente = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    # forca UTF-8 na saida do comando -- sem isso, o Windows grava o log em
+    # cp1252 e os acentos ficam ilegiveis quando lemos o log depois
     with open(job.log_path, "w", encoding="utf-8") as arquivo_log:
-        resultado = subprocess.run(comando, stdout=arquivo_log, stderr=subprocess.STDOUT)
+        resultado = subprocess.run(
+            comando, stdout=arquivo_log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+            env=ambiente, creationflags=subprocess.CREATE_NO_WINDOW,
+            # CREATE_NO_WINDOW: sem isso, o Windows abriria uma janela de
+            # terminal nova pra esse comando, ja que o executor nao tem terminal
+        )
 
     novo_estado = "concluido" if resultado.returncode == 0 else "erro"
     atualizar_job(id_job, caminho_registro, estado=novo_estado)
 ```
 
+```python
+# -*- coding: utf-8 -*-
+# src/buscador/core/jobs_executor.py
+"""
+Ponto de entrada do processo "executor" de um job -- lancado por
+core/jobs_motor.py::iniciar_job, nunca digitado na mao. Roda o comando de
+verdade do job e atualiza o registro quando ele termina:
+"python -m buscador.core.jobs_executor <id_do_job> <caminho_do_registro>".
+"""
+import sys
+from pathlib import Path
+
+from buscador.core.jobs_motor import executar_job
+
+
+def main(argv=None):
+    argv = argv if argv is not None else sys.argv[1:]
+    executar_job(argv[0], Path(argv[1]))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
 - [ ] **Step 5: Rodar os testes e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: `3 passed`
+Expected: `5 passed`
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/buscador/core/jobs_motor.py tests/fixtures/job_fake.py tests/test_jobs_motor.py
-git commit -m "feat: motor de jobs -- iniciar e executar"
+git add src/buscador/core/jobs_motor.py src/buscador/core/jobs_executor.py tests/fixtures/job_fake.py tests/test_jobs_motor.py
+git commit -m "feat: motor de jobs -- iniciar (destacado) e executar"
 ```
 
 ---
@@ -625,7 +777,7 @@ from buscador.core.jobs_registro import (
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos os testes do arquivo passando (agora 7 no total).
+Expected: todos os testes do arquivo passando (agora 9 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -729,7 +881,7 @@ def parar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegist
 - [ ] **Step 5: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 9 no total).
+Expected: todos passando (agora 11 no total).
 
 - [ ] **Step 6: Commit**
 
@@ -875,7 +1027,7 @@ def descrever_progresso(job: JobRegistrado) -> str:
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 13 no total).
+Expected: todos passando (agora 15 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -944,7 +1096,7 @@ def retomar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegi
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 15 no total).
+Expected: todos passando (agora 17 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -962,7 +1114,7 @@ git commit -m "feat: motor de jobs -- retomar um job"
 - Test: `tests/test_jobs_cli.py`
 
 **Interfaces:**
-- Consumes: `executar_job`, `iniciar_job`, `parar_job`, `reconciliar_estados`, `retomar_job`, `descrever_progresso` (de `buscador.core.jobs_motor`, Tasks 3-7); `CAMINHO_PADRAO` (de `buscador.core.jobs_registro`)
+- Consumes: `iniciar_job`, `parar_job`, `reconciliar_estados`, `retomar_job`, `descrever_progresso` (de `buscador.core.jobs_motor`, Tasks 3-7); `CAMINHO_PADRAO` (de `buscador.core.jobs_registro`)
 - Produces: `main(argv=None) -> int`
 
 - [ ] **Step 1: Escrever os testes**
@@ -1031,16 +1183,14 @@ Expected: `ModuleNotFoundError: No module named 'buscador.jobs_cli'`
 """
 Ponto de entrada de linha de comando do motor de jobs -- roda quando voce
 digita "python -m buscador.jobs_cli <comando>". Comandos disponiveis:
-iniciar, status, parar, retomar. "_executar" e um comando interno, usado
-so pelo proprio motor (nao pra digitar na mao) -- ver
-core/jobs_motor.py::iniciar_job.
+iniciar, status, parar, retomar. O trabalho de verdade fica em
+core/jobs_motor.py -- este arquivo so le os argumentos e chama o motor.
 """
 import argparse
 from pathlib import Path
 
 from buscador.core.jobs_motor import (
     descrever_progresso,
-    executar_job,
     iniciar_job,
     parar_job,
     reconciliar_estados,
@@ -1081,11 +1231,6 @@ def _comando_retomar(args):
     return 0
 
 
-def _comando_executar_interno(args):
-    executar_job(args.id, args.registro)
-    return 0
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Motor de jobs do BuscadorBaixador.")
     parser.add_argument("--registro", default=CAMINHO_PADRAO, type=Path,
@@ -1093,7 +1238,7 @@ def main(argv=None):
     subparsers = parser.add_subparsers(dest="comando", required=True)
 
     p_iniciar = subparsers.add_parser("iniciar", help="Inicia um job novo")
-    p_iniciar.add_argument("modulo", choices=["cli", "gallica_crawl", "gallica_enriquecer", "logar"])
+    p_iniciar.add_argument("modulo", choices=["cli", "gallica_crawl", "gallica_enriquecer"])
     p_iniciar.add_argument("argv", nargs=argparse.REMAINDER,
                             help="Argumentos passados pro comando de verdade (ex.: --adapter phpbb)")
     # REMAINDER (nao "*") e essencial aqui -- com "*" o argparse tentaria
@@ -1113,12 +1258,6 @@ def main(argv=None):
     p_retomar = subparsers.add_parser("retomar", help="Inicia de novo um job (mesmo modulo/argumentos)")
     p_retomar.add_argument("id")
     p_retomar.set_defaults(funcao=_comando_retomar)
-
-    p_executar = subparsers.add_parser("_executar", help=argparse.SUPPRESS)
-    # comando interno, escondido do --help -- usado so pelo processo
-    # executor que iniciar_job lanca sozinho
-    p_executar.add_argument("id")
-    p_executar.set_defaults(funcao=_comando_executar_interno)
 
     args = parser.parse_args(argv)
     return args.funcao(args)
