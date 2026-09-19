@@ -241,6 +241,7 @@ git commit -m "feat: registro de jobs em disco (jobs_registro.py)"
 
 **Files:**
 - Create: `src/buscador/core/jobs_notificacoes.py`
+- Create: `tests/conftest.py` (silencia o aviso real do Windows em TODOS os testes — o Task 9 faz `cli.main`/`gallica_crawl.main` chamarem `avisar_windows`, e sem isso cada `pytest` abriria um balão de verdade no Windows do Samuel)
 - Test: `tests/test_jobs_notificacoes.py`
 - Modify: `pyproject.toml`
 
@@ -342,6 +343,22 @@ def avisar_windows(titulo: str, mensagem: str) -> None:
     thread.join(timeout=ESPERA_MAXIMA_SEGUNDOS)
 ```
 
+Também criar `tests/conftest.py` (não existe hoje):
+
+```python
+# -*- coding: utf-8 -*-
+# tests/conftest.py
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _sem_aviso_real_do_windows(monkeypatch):
+    """Nenhum teste deve abrir um aviso de verdade no Windows do Samuel --
+    os testes que querem checar o aviso trocam o notify por conta propria
+    (como test_jobs_notificacoes.py faz)."""
+    monkeypatch.setattr("buscador.core.jobs_notificacoes.notify", lambda titulo, mensagem: None)
+```
+
 - [ ] **Step 5: Rodar o teste e confirmar que passa**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_notificacoes.py -v`
@@ -350,7 +367,7 @@ Expected: `3 passed`
 - [ ] **Step 6: Commit**
 
 ```bash
-git add pyproject.toml src/buscador/core/jobs_notificacoes.py tests/test_jobs_notificacoes.py
+git add pyproject.toml src/buscador/core/jobs_notificacoes.py tests/conftest.py tests/test_jobs_notificacoes.py
 git commit -m "feat: notificacao nativa do Windows pro motor de jobs"
 ```
 
