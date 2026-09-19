@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 # tests/test_jobs_registro.py
+import subprocess
+import sys
+import time
+
 import pytest
 
+from buscador.core import jobs_registro
 from buscador.core.jobs_registro import (
     JobRegistrado,
     adicionar_job,
@@ -9,6 +14,7 @@ from buscador.core.jobs_registro import (
     carregar_registro,
     novo_id,
     salvar_registro,
+    trava_registro,
 )
 
 
@@ -41,7 +47,8 @@ def test_salvar_nao_deixa_arquivo_tmp_para_tras(tmp_path):
     caminho = tmp_path / "registro.json"
     salvar_registro([_job_de_teste()], caminho)
 
-    assert not caminho.with_suffix(".json.tmp").exists()
+    # Verifica que não sobrou nenhum arquivo .tmp (nomes agora são por-escritor)
+    assert list(tmp_path.glob("*.tmp")) == []
 
 
 def test_adicionar_job_acrescenta_sem_apagar_os_que_ja_existiam(tmp_path):
@@ -79,3 +86,113 @@ def test_novo_id_inclui_o_nome_do_modulo_e_e_diferente_a_cada_chamada():
 
     assert id1.startswith("gallica_crawl-")
     assert id1 != id2
+
+
+def test_varios_processos_atualizando_ao_mesmo_tempo_nao_corrompem_nem_perdem_atualizacoes(tmp_path):
+    """Testa concorrência: 3 processos atualizando o mesmo registro em paralelo.
+
+    Cada processo faz 30 atualizações, alterando o PID. No final, todos os
+    jobs devem ter pid=30 (nenhuma atualização foi perdida), e não deve
+    sobrar nenhum arquivo .tmp nem .lock."""
+    caminho = tmp_path / "registro.json"
+
+    # Prepara registro com 3 jobs
+    salvar_registro(
+        [
+            _job_de_teste("j0"),
+            _job_de_teste("j1"),
+            _job_de_teste("j2"),
+        ],
+        caminho,
+    )
+
+    # Script que roda em cada subprocess: 30 atualizações de PID
+    SCRIPT = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from buscador.core.jobs_registro import atualizar_job\n"
+        "caminho = Path(sys.argv[1])\n"
+        "for n in range(1, 31):\n"
+        "    atualizar_job(sys.argv[2], caminho, pid=n)\n"
+    )
+
+    # Lança 3 processos em paralelo
+    processos = []
+    for job_id in ["j0", "j1", "j2"]:
+        p = subprocess.Popen(
+            [sys.executable, "-c", SCRIPT, str(caminho), job_id],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        processos.append(p)
+
+    # Espera todos terminarem
+    for p in processos:
+        returncode = p.wait()
+        assert returncode == 0, f"Subprocess falhou com return code {returncode}"
+
+    # Verifica resultado
+    jobs = carregar_registro(caminho)
+    assert len(jobs) == 3
+    for job in jobs:
+        assert job.pid == 30, f"Job {job.id} deveria ter pid=30, mas tem {job.pid}"
+
+    # Verifica que não sobrou .tmp nem .lock
+    assert list(tmp_path.glob("*.tmp")) == []
+    assert list(tmp_path.glob("*.lock")) == []
+
+
+def test_trava_velha_e_abandonada_e_ignorada(tmp_path):
+    """Testa que uma trava antiga (processo morreu) é removida automaticamente."""
+    caminho = tmp_path / "registro.json"
+    trava = caminho.with_suffix(caminho.suffix + ".lock")
+
+    # Prepara registro válido
+    salvar_registro([_job_de_teste()], caminho)
+
+    # Cria um arquivo .lock antigo (120 segundos atrás)
+    antigo = time.time() - 120
+    trava.touch()
+    import os as _os
+    _os.utime(trava, (antigo, antigo))
+
+    # atualizar_job deve funcionar normalmente e remover a trava antiga
+    atualizado = atualizar_job("job-teste", caminho, estado="concluido")
+
+    assert atualizado.estado == "concluido"
+    assert not trava.exists()
+
+
+def test_trava_recente_de_outro_processo_estoura_timeout(tmp_path, monkeypatch):
+    """Testa que trava recente de outro processo causa TimeoutError."""
+    caminho = tmp_path / "registro.json"
+    trava = caminho.with_suffix(caminho.suffix + ".lock")
+
+    # Prepara registro válido
+    salvar_registro([_job_de_teste()], caminho)
+
+    # Cria um arquivo .lock recente (simula outro processo segurando a trava)
+    trava.touch()
+
+    # Reduz timeout pra não ter que esperar 10 segundos
+    monkeypatch.setattr(jobs_registro, "TIMEOUT_TRAVA_SEGUNDOS", 0.2)
+
+    # atualizar_job deve falhar com TimeoutError
+    with pytest.raises(TimeoutError):
+        atualizar_job("job-teste", caminho, estado="concluido")
+
+
+def test_trava_e_liberada_mesmo_quando_ha_erro_dentro(tmp_path):
+    """Testa que a trava é liberada mesmo quando ValueError é levantada."""
+    caminho = tmp_path / "registro.json"
+    trava = caminho.with_suffix(caminho.suffix + ".lock")
+
+    # Prepara registro válido
+    salvar_registro([_job_de_teste()], caminho)
+
+    # Tenta atualizar job que não existe (vai levantar ValueError)
+    with pytest.raises(ValueError):
+        atualizar_job("nao-existe", caminho, estado="concluido")
+
+    # Verifica que a trava foi liberada
+    assert not trava.exists()
