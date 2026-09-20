@@ -16,6 +16,7 @@ dependencies = [
     "argostranslate>=1.9",
     "browser-cookie3>=0.19",
     "seleniumbase>=4.32",
+    "win11toast>=0.35",
 ]
 
 [project.optional-dependencies]
