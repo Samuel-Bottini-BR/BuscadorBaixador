@@ -1057,6 +1057,26 @@ def test_descrever_progresso_gallica_crawl_le_o_checkpoint(tmp_path, monkeypatch
     assert "10.0%" in progresso
 
 
+def test_descrever_progresso_gallica_crawl_respeita_a_opcao_job(tmp_path, monkeypatch):
+    # com --job, a pasta do checkpoint tem o nome escolhido, nao o derivado da consulta
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    pasta_checkpoint = tmp_path / "saidas" / "gallica_crawl" / "meu-job"
+    pasta_checkpoint.mkdir(parents=True)
+    (pasta_checkpoint / "checkpoint.json").write_text(json_mod.dumps({
+        "consulta": "qualquer", "tamanho_pagina": 50, "proximo_start_record": 51,
+        "total_registros_api": 200, "itens_gravados": 50, "concluido": False,
+        "atualizado_em": "2026-09-17T00:00:00+00:00",
+    }), encoding="utf-8")
+    for argv in (["qualquer", "--job", "meu-job"], ["qualquer", "--job=meu-job"]):
+        job = JobRegistrado(id="j1", modulo="gallica_crawl", argv=argv, pid=1,
+                             estado="rodando", log_path=str(tmp_path / "log.txt"))
+
+        progresso = jobs_motor.descrever_progresso(job)
+
+        assert "50/200" in progresso
+        assert "25.0%" in progresso
+
+
 def test_descrever_progresso_gallica_enriquecer_le_o_checkpoint(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
     pasta_checkpoint = tmp_path / "saidas" / "gallica_crawl" / "meu-job"
@@ -1097,13 +1117,41 @@ Expected: `AttributeError: module 'buscador.core.jobs_motor' has no attribute 'd
 - [ ] **Step 3: Implementar (acrescentar ao final de `jobs_motor.py`)**
 
 ```python
+def _nome_da_pasta_do_job_gallica(argv: list[str]) -> Optional[str]:
+    """Nome da pasta do job da Etapa 1: o valor de --job (ou --job=VALOR), se
+    foi passado; senao, derivado da consulta (primeiro item de argv) -- mesma
+    regra de gallica_crawl.py::_diretorio_do_job."""
+    for posicao, item in enumerate(argv):
+        if item == "--job" and posicao + 1 < len(argv):
+            return argv[posicao + 1]
+        if item.startswith("--job="):
+            return item[len("--job="):]
+    return slug_consulta(argv[0]) if argv else None
+
+
+def _ultima_linha_do_log(caminho: Path) -> Optional[str]:
+    """Ultima linha nao vazia do log, lendo so o final do arquivo (o log de
+    uma coleta longa pode ter dezenas de milhares de linhas, e o status e
+    consultado toda hora)."""
+    if not caminho.exists():
+        return None
+    with open(caminho, "rb") as arquivo:
+        arquivo.seek(0, os.SEEK_END)
+        tamanho = arquivo.tell()
+        arquivo.seek(max(0, tamanho - 4096))
+        final = arquivo.read().decode("utf-8", errors="replace")
+    linhas = [linha for linha in final.splitlines() if linha.strip()]
+    return linhas[-1] if linhas else None
+
+
 def _progresso_gallica_crawl(job: JobRegistrado) -> Optional[str]:
     """Le o checkpoint da Etapa 1 (coleta SRU da Gallica) pra esse job, se
-    existir. A consulta e sempre o primeiro item de argv (ver
-    gallica_crawl.py)."""
-    if not job.argv:
+    existir. A pasta do checkpoint vem do --job ou, sem ele, da consulta (o
+    primeiro item de argv) -- ver gallica_crawl.py."""
+    nome_da_pasta = _nome_da_pasta_do_job_gallica(job.argv)
+    if not nome_da_pasta:
         return None
-    caminho = SAIDAS / "gallica_crawl" / slug_consulta(job.argv[0]) / "checkpoint.json"
+    caminho = SAIDAS / "gallica_crawl" / nome_da_pasta / "checkpoint.json"
     if not caminho.exists():
         return None
     checkpoint = Checkpoint(**json.loads(caminho.read_text(encoding="utf-8")))
@@ -1115,9 +1163,10 @@ def _progresso_gallica_crawl(job: JobRegistrado) -> Optional[str]:
 
 def _progresso_gallica_enriquecer(job: JobRegistrado) -> Optional[str]:
     """Le o checkpoint da Etapa 2 (verificar link + traduzir) pra esse job,
-    se existir. O nome da pasta do job e sempre o primeiro item de argv
-    (ver gallica_enriquecer.py)."""
-    if not job.argv:
+    se existir. O nome da pasta do job e o primeiro item de argv (ver
+    gallica_enriquecer.py); se o primeiro item for uma opcao (comeca com
+    "-"), nao da pra saber qual e a pasta."""
+    if not job.argv or job.argv[0].startswith("-"):
         return None
     caminho = SAIDAS / "gallica_crawl" / job.argv[0] / "checkpoint_enriquecimento.json"
     if not caminho.exists():
@@ -1143,18 +1192,16 @@ def descrever_progresso(job: JobRegistrado) -> str:
         progresso = leitor(job)
         if progresso:
             return progresso
-    caminho_log = Path(job.log_path)
-    if caminho_log.exists():
-        linhas = caminho_log.read_text(encoding="utf-8", errors="ignore").splitlines()
-        if linhas:
-            return f"log: {linhas[-1]}"
+    ultima_linha = _ultima_linha_do_log(Path(job.log_path))
+    if ultima_linha:
+        return f"log: {ultima_linha}"
     return "sem informacao de progresso ainda"
 ```
 
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 32 no total).
+Expected: todos passando (agora 33 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -1223,7 +1270,7 @@ def retomar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegi
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 34 no total).
+Expected: todos passando (agora 35 no total).
 
 - [ ] **Step 5: Commit**
 
