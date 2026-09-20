@@ -36,6 +36,8 @@ ser avisado quando travar") usando os comandos que já existem hoje.
 
 ### Task 1: Registro de jobs (armazenamento em disco)
 
+> **Emenda (rodada de correção 1 da execução):** a revisão provou que o código deste task, do jeito escrito abaixo, corrompe o registro quando vários processos gravam juntos (o motor faz isso: quem inicia + vários executores). O `jobs_registro.py` do repositório foi endurecido — arquivo temporário único por escritor, `trava_registro` (context manager público, trava por arquivo `.lock`) e retentativa de `PermissionError` do Windows — sem mudar nenhuma assinatura abaixo. Os blocos de código deste task são o ponto de partida; **o arquivo no repositório é a versão vigente**. Detalhes em `.superpowers/sdd/2026-09-17-motor-de-jobs/task-1-fix1.md` (local, fora do git) e no commit da correção.
+
 **Files:**
 - Create: `src/buscador/core/jobs_registro.py`
 - Test: `tests/test_jobs_registro.py`
@@ -734,9 +736,29 @@ def test_reconciliar_nao_mexe_em_job_que_continua_vivo(tmp_path):
     jobs = jobs_motor.reconciliar_estados(caminho_registro)
 
     assert jobs[0].estado == "rodando"
+
+
+def test_reconciliar_nao_sobrescreve_estado_final_gravado_durante_a_checagem(tmp_path, monkeypatch):
+    # o executor pode gravar "concluido" um instante antes de o processo morrer;
+    # a reconciliacao nao pode sobrescrever isso com "interrompido"
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=999999, estado="rodando",
+        log_path=str(tmp_path / "log.txt"),
+    )
+    salvar_registro([job], caminho_registro)
+
+    def pid_morto_com_executor_terminando_no_meio(pid):
+        atualizar_job("job-1", caminho_registro, estado="concluido")
+        return False
+    monkeypatch.setattr(jobs_motor, "pid_esta_vivo", pid_morto_com_executor_terminando_no_meio)
+
+    jobs = jobs_motor.reconciliar_estados(caminho_registro)
+
+    assert jobs[0].estado == "concluido"
 ```
 
-Adicionar `import os` no topo do arquivo de teste (junto dos outros imports).
+Adicionar `import os` e `from buscador.core.jobs_registro import atualizar_job` no topo do arquivo de teste (junto dos outros imports).
 
 - [ ] **Step 2: Rodar e confirmar que falham**
 
@@ -757,27 +779,36 @@ def pid_esta_vivo(pid: int) -> bool:
     return str(pid) in resultado.stdout
 
 
+def _marcar_interrompido(id_job: str, caminho_registro: Path) -> None:
+    """Marca o job como 'interrompido' -- mas so se, DENTRO da trava do
+    registro, ele ainda constar como 'rodando'. O executor pode ter gravado
+    'concluido' ou 'erro' um instante antes de o processo morrer, e isso nao
+    pode ser sobrescrito."""
+    with trava_registro(caminho_registro):
+        jobs = carregar_registro(caminho_registro)
+        for job in jobs:
+            if job.id == id_job and job.estado == "rodando":
+                job.estado = "interrompido"
+                job.atualizado_em = datetime.now(timezone.utc).isoformat()
+                salvar_registro(jobs, caminho_registro)
+                return
+
+
 def reconciliar_estados(caminho_registro: Path = CAMINHO_PADRAO) -> list[JobRegistrado]:
     """Confere, pra cada job que o registro ainda acha que esta 'rodando',
     se o processo continua vivo de verdade. Se nao estiver -- e o proprio
     executor nao tiver atualizado o estado antes de morrer (ex.: foi morto
     por fora, ou crashou sem dar tempo de atualizar) -- marca como
     'interrompido', pra nunca mostrar um job como 'rodando' quando ja
-    morreu."""
-    jobs = carregar_registro(caminho_registro)
-    mudou = False
-    for job in jobs:
+    morreu. Devolve a lista ja atualizada."""
+    for job in carregar_registro(caminho_registro):
         if job.estado == "rodando" and not pid_esta_vivo(job.pid):
-            job.estado = "interrompido"
-            job.atualizado_em = datetime.now(timezone.utc).isoformat()
-            mudou = True
-    if mudou:
-        salvar_registro(jobs, caminho_registro)
-    return jobs
+            _marcar_interrompido(job.id, caminho_registro)
+    return carregar_registro(caminho_registro)
 ```
 
 No topo do arquivo, trocar o import de `buscador.core.jobs_registro` (escrito no Task 3) pra incluir
-`salvar_registro`:
+`salvar_registro` e `trava_registro` (a trava foi acrescentada ao `jobs_registro.py` na rodada de correção do Task 1 — quem faz ler→modificar→salvar no registro tem que segurá-la):
 
 ```python
 from buscador.core.jobs_registro import (
@@ -788,13 +819,14 @@ from buscador.core.jobs_registro import (
     carregar_registro,
     novo_id,
     salvar_registro,
+    trava_registro,
 )
 ```
 
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos os testes do arquivo passando (agora 9 no total).
+Expected: todos os testes do arquivo passando (agora 10 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -898,7 +930,7 @@ def parar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegist
 - [ ] **Step 5: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 11 no total).
+Expected: todos passando (agora 12 no total).
 
 - [ ] **Step 6: Commit**
 
@@ -1044,7 +1076,7 @@ def descrever_progresso(job: JobRegistrado) -> str:
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 15 no total).
+Expected: todos passando (agora 16 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -1113,7 +1145,7 @@ def retomar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegi
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 17 no total).
+Expected: todos passando (agora 18 no total).
 
 - [ ] **Step 5: Commit**
 
