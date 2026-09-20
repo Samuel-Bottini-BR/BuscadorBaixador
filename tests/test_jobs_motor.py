@@ -638,3 +638,65 @@ def test_descrever_progresso_usa_o_log_quando_o_modulo_e_conhecido_mas_ainda_nao
                          estado="rodando", log_path=str(caminho_log))
 
     assert jobs_motor.descrever_progresso(job) == "log: linha do log"
+
+
+def _esperar_o_job_terminar(id_job, caminho_registro, segundos=20):
+    prazo = time.time() + segundos
+    estado = "rodando"
+    while time.time() < prazo and estado == "rodando":
+        time.sleep(0.3)
+        estado = [j for j in carregar_registro(caminho_registro) if j.id == id_job][0].estado
+    return estado
+
+
+def test_retomar_job_inicia_um_job_novo_com_mesmo_modulo_e_argv(tmp_path, monkeypatch):
+    caminho_registro = tmp_path / "registro.json"
+    monkeypatch.setitem(jobs_motor.MODULOS_PERMITIDOS, "echo_teste", "tests.fixtures.job_fake")
+    monkeypatch.setattr(jobs_motor, "PASTA_JOBS", tmp_path / "jobs")
+    original = jobs_motor.iniciar_job("echo_teste", ["0"], caminho_registro)
+    assert _esperar_o_job_terminar(original.id, caminho_registro) == "concluido"
+
+    retomado = jobs_motor.retomar_job(original.id, caminho_registro)
+
+    assert retomado.id != original.id
+    assert retomado.modulo == "echo_teste"
+    assert retomado.argv == ["0"]
+    _esperar_o_job_terminar(retomado.id, caminho_registro)  # nao deixa executor pra tras
+
+
+def test_retomar_job_com_id_inexistente_da_erro(tmp_path):
+    caminho_registro = tmp_path / "registro.json"
+    salvar_registro([], caminho_registro)
+
+    with pytest.raises(ValueError):
+        jobs_motor.retomar_job("nao-existe", caminho_registro)
+
+
+def test_retomar_job_recusa_se_ja_existe_job_identico_rodando(tmp_path):
+    caminho_registro = tmp_path / "registro.json"
+    base = dict(modulo="cli", argv=["a", "b"], log_path=str(tmp_path / "log.txt"))
+    parado = JobRegistrado(id="job-parado", pid=0, estado="parado", **base)
+    rodando = JobRegistrado(id="job-rodando", pid=os.getpid(), estado="rodando", **base)
+    salvar_registro([parado, rodando], caminho_registro)
+
+    with pytest.raises(RuntimeError):
+        jobs_motor.retomar_job("job-parado", caminho_registro)
+
+    assert len(carregar_registro(caminho_registro)) == 2  # nao lancou nada
+
+
+def test_retomar_job_ignora_job_identico_que_na_verdade_ja_morreu(tmp_path, monkeypatch):
+    monkeypatch.setitem(jobs_motor.MODULOS_PERMITIDOS, "echo_teste", "tests.fixtures.job_fake")
+    monkeypatch.setattr(jobs_motor, "PASTA_JOBS", tmp_path / "jobs")
+    caminho_registro = tmp_path / "registro.json"
+    base = dict(modulo="echo_teste", argv=["0"], log_path=str(tmp_path / "log.txt"))
+    parado = JobRegistrado(id="job-parado", pid=0, estado="parado", **base)
+    fantasma = JobRegistrado(id="job-fantasma", pid=999999, estado="rodando", **base)
+    salvar_registro([parado, fantasma], caminho_registro)
+
+    novo = jobs_motor.retomar_job("job-parado", caminho_registro)
+
+    assert novo.id not in ("job-parado", "job-fantasma")
+    estados = {job.id: job.estado for job in carregar_registro(caminho_registro)}
+    assert estados["job-fantasma"] == "interrompido"
+    _esperar_o_job_terminar(novo.id, caminho_registro)  # nao deixa executor pra tras

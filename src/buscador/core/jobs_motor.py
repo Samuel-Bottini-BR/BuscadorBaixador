@@ -438,3 +438,26 @@ def descrever_progresso(job: JobRegistrado) -> str:
     if ultima_linha:
         return f"log: {ultima_linha}"
     return "sem informacao de progresso ainda"
+
+
+def retomar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado:
+    """Inicia um job NOVO com o mesmo modulo e os mesmos argumentos de um
+    job anterior -- nao precisa de nada especial pra 'retomar' de verdade,
+    porque os proprios comandos (gallica_crawl, gallica_enriquecer) ja
+    sabem continuar de onde pararam sozinhos, pelo checkpoint deles, desde
+    que sejam chamados com a mesma consulta/job. Recusa (RuntimeError) se
+    ja existe um job identico rodando: um segundo executor mexeria no MESMO
+    checkpoint. Reconcilia os estados primeiro, pra um job que o registro
+    ainda acha 'rodando' mas ja morreu nao bloquear a retomada."""
+    jobs = {job.id: job for job in reconciliar_estados(caminho_registro)}
+    job_antigo = jobs.get(id_job)
+    if job_antigo is None:
+        raise ValueError(f"Nenhum job encontrado com id '{id_job}'")
+    for outro in jobs.values():
+        if (outro.estado == "rodando" and outro.modulo == job_antigo.modulo
+                and outro.argv == job_antigo.argv):
+            raise RuntimeError(
+                f"Ja existe um job identico rodando ('{outro.id}'); pare-o antes de retomar, "
+                "senao dois executores mexeriam no mesmo progresso."
+            )
+    return iniciar_job(job_antigo.modulo, job_antigo.argv, caminho_registro)
