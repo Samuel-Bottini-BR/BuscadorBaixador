@@ -73,8 +73,8 @@ def iniciar_job(modulo: str, argv: list[str], caminho_registro: Path = CAMINHO_P
     """Inicia um job novo: cria a pasta de log dele, e lanca um processo
     "executor" (destacado, separado deste) responsavel por rodar o comando
     de verdade e atualizar o registro quando terminar. O motor guarda o PID
-    desse executor -- pare-lo (parar_job) mata o executor e o comando real
-    junto, porque um e processo-filho do outro."""
+    desse executor -- parar_job mata a arvore inteira dele (o executor e o
+    comando real que roda por baixo) com o 'taskkill /T'."""
     if modulo not in MODULOS_PERMITIDOS:
         raise ValueError(
             f"Modulo '{modulo}' nao e um job conhecido. Opcoes: {sorted(MODULOS_PERMITIDOS)}"
@@ -216,51 +216,124 @@ def reconciliar_estados(caminho_registro: Path = CAMINHO_PADRAO) -> list[JobRegi
     return carregar_registro(caminho_registro)
 
 
-def _linha_de_comando(pid: int) -> str:
-    """Devolve a linha de comando do processo com esse PID ('' se ele nao
-    existir ou se a consulta falhar). Usa o PowerShell (que ja vem no Windows
-    10/11) em vez de uma biblioteca nova. O PID e convertido pra inteiro
-    antes de entrar no comando, entao nada digitado pode virar codigo."""
-    resultado = subprocess.run(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-         f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
-        capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
-    )
-    return resultado.stdout.strip()
+TIMEOUT_POWERSHELL_SEGUNDOS = 15
+# quanto tempo esperar o PowerShell responder. Sem limite, um PowerShell (ou o
+# WMI do Windows) travado congelaria o parar_job -- e quem o chamou -- pra sempre.
 
 
-def _e_o_executor_do_job(job: JobRegistrado) -> bool:
-    """True so se o processo com o PID do job e mesmo o executor DESTE job
-    (a linha de comando dele contem o modulo executor e o id do job). Protege
-    contra o Windows ter reaproveitado o PID de um executor morto para OUTRO
-    programa: matar esse outro programa seria um desastre. Se a consulta
-    falhar, devolve False -- na duvida, nao mata."""
+def _linha_de_comando(pid: int) -> Optional[str]:
+    """Devolve a linha de comando do processo com esse PID. Tres resultados:
+    o texto da linha (o processo existe); '' (o processo nao existe: a consulta
+    funcionou e nao achou nada); ou None (a consulta FALHOU -- estourou o
+    tempo, o PowerShell nao abriu ou saiu com erro -- ou seja, "nao sei").
+    Quem chama precisa distinguir '' de None: '' PROVA que o processo nao
+    existe, None nao prova nada. Usa o PowerShell (que ja vem no Windows 10/11)
+    em vez de uma biblioteca nova. O PID e convertido pra inteiro antes de
+    entrar no comando, entao nada digitado pode virar codigo. A saida e lida
+    como bytes e decodificada aqui, com errors='replace': o console do
+    PowerShell usa uma codepage (ex.: cp850) que o Python nao decodifica
+    sozinho (um 'E' acentuado no caminho do programa daria UnicodeDecodeError),
+    e a guarda so compara texto ASCII -- um caractere trocado por '?' nao
+    atrapalha."""
+    try:
+        resultado = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
+            capture_output=True, timeout=TIMEOUT_POWERSHELL_SEGUNDOS,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if resultado.returncode != 0:
+        return None
+    return resultado.stdout.decode("utf-8", errors="replace").strip()
+
+
+def _e_o_executor_do_job(job: JobRegistrado) -> Optional[bool]:
+    """Diz se o processo com o PID do job e mesmo o executor DESTE job (a linha
+    de comando dele contem o modulo executor E o id do job). Protege contra o
+    Windows ter reaproveitado o PID de um executor morto para OUTRO programa
+    (ou para o executor de OUTRO job): matar esse outro seria um desastre.
+    Tres resultados:
+      True  -- confirmado: e o executor deste job;
+      False -- provado que NAO e (o processo nao existe mais, ou e outro programa);
+      None  -- nao deu pra saber (a consulta ao Windows falhou): quem chama nao
+               deve matar nada nem dar o job como parado."""
     if job.pid <= 0:
         return False
     linha = _linha_de_comando(job.pid)
+    if linha is None:
+        return None
     return "jobs_executor" in linha and job.id in linha
 
 
+def _marcar_parado(id_job: str, caminho_registro: Path) -> JobRegistrado:
+    """Marca o job como 'parado' -- mas so se, DENTRO da trava do registro, ele
+    ainda estiver 'rodando' (compare-and-set, como o _marcar_interrompido).
+    Consultar o Windows e matar o processo leva algum tempo, e nesse meio
+    tempo o executor pode ter gravado 'concluido' ou 'erro' (ou uma
+    reconciliacao ter marcado 'interrompido'): esse estado ja gravado nao pode
+    ser sobrescrito. Devolve o job como ficou no disco, tenha sido marcado por
+    aqui ou nao. Levanta ValueError se o id nao existir."""
+    with trava_registro(caminho_registro):
+        jobs = carregar_registro(caminho_registro)
+        for job in jobs:
+            if job.id == id_job:
+                if job.estado == "rodando":
+                    job.estado = "parado"
+                    job.atualizado_em = datetime.now(timezone.utc).isoformat()
+                    salvar_registro(jobs, caminho_registro)
+                return job
+    raise ValueError(f"Nenhum job encontrado com id '{id_job}'")
+
+
 def parar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado:
-    """Para um job que o registro diz que esta 'rodando': mata o executor (e,
-    com ele, o comando real que roda por baixo, porque e processo-filho) --
-    mas SO se o processo do PID guardado for mesmo o executor deste job -- e
-    marca o job como 'parado' de proposito (diferente de 'interrompido', que
-    e quando morreu sozinho). Um job que ja terminou e devolvido sem mudar
-    nada. O progresso ja salvo em disco (checkpoint) nao e afetado -- rodar
-    'retomar' depois continua de onde parou."""
+    """Para um job que o registro diz que esta 'rodando'. Tres caminhos:
+    - o job nao estava 'rodando' (ja terminou, ja foi parado...): e devolvido
+      sem mudar nada;
+    - o PID guardado NAO e o executor deste job (o executor ja morreu e o
+      Windows reaproveitou o PID): nao mata ninguem, so marca 'parado';
+    - o PID e mesmo o executor deste job: mata a arvore inteira dele com
+      'taskkill /T' (o executor E o comando real que roda por baixo -- quem
+      derruba o comando junto e o /T, nao o fato de ser processo-filho) e
+      marca 'parado' de proposito (diferente de 'interrompido', que e quando
+      o job morreu sozinho).
+    O 'parado' so e gravado se o job AINDA estiver 'rodando' na hora de gravar
+    (ver _marcar_parado): se o executor terminou nesse meio tempo, fica o
+    estado que ele gravou. Levanta ValueError se o id nao existe. Levanta
+    RuntimeError, sempre sem mudar o estado, quando: o job ainda esta sendo
+    lancado (o pid ainda nao foi gravado); nao da pra confirmar qual processo
+    e o executor (a consulta ao Windows falhou -- nada e morto); ou o taskkill
+    falha e o processo continua vivo. O progresso ja salvo em disco
+    (checkpoint) nao e afetado -- rodar 'retomar' depois continua de onde
+    parou."""
     jobs = {job.id: job for job in carregar_registro(caminho_registro)}
     job = jobs.get(id_job)
     if job is None:
         raise ValueError(f"Nenhum job encontrado com id '{id_job}'")
     if job.estado != "rodando":
         return job
+    if _lancamento_em_andamento(job):
+        raise RuntimeError(
+            f"O job '{id_job}' ainda esta sendo lancado; tente parar de novo em alguns segundos."
+        )
 
-    if _e_o_executor_do_job(job):
-        subprocess.run(
+    e_o_executor = _e_o_executor_do_job(job)
+    if e_o_executor is None:
+        raise RuntimeError(
+            f"Nao consegui confirmar qual processo e o executor do job '{id_job}' "
+            "(a consulta ao Windows falhou); nada foi morto e o estado nao mudou."
+        )
+    if e_o_executor:
+        resultado = subprocess.run(
             ["taskkill", "/PID", str(job.pid), "/T", "/F"],
-            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+            capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW,
         )
         # "/T" mata a arvore inteira (o executor e todo processo-filho dele,
         # nao so o executor sozinho) -- "/F" forca o encerramento
-    return atualizar_job(id_job, caminho_registro, estado="parado")
+        if resultado.returncode != 0 and pid_esta_vivo(job.pid):
+            raise RuntimeError(
+                f"Nao consegui parar o job '{id_job}' (o taskkill falhou e o processo continua vivo); "
+                "o estado nao mudou."
+            )
+    return _marcar_parado(id_job, caminho_registro)

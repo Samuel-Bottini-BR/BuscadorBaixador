@@ -250,19 +250,38 @@ def test_reconciliar_nao_marca_se_o_pid_real_foi_gravado_durante_a_checagem(tmp_
     assert jobs[0].pid == os.getpid()
 
 
-def test_parar_job_marca_estado_parado_e_mata_o_processo(tmp_path, monkeypatch):
+def test_parar_job_marca_estado_parado_e_mata_a_arvore_inteira(tmp_path, monkeypatch):
     caminho_registro = tmp_path / "registro.json"
+    arquivo_pid = tmp_path / "pid_do_comando.txt"
     monkeypatch.setitem(jobs_motor.MODULOS_PERMITIDOS, "espera_teste", "tests.fixtures.job_lento_fake")
     monkeypatch.setattr(jobs_motor, "PASTA_JOBS", tmp_path / "jobs")
 
-    job = jobs_motor.iniciar_job("espera_teste", [], caminho_registro)
-    time.sleep(2)  # da tempo do executor (e do comando lento) subirem de verdade
-    assert jobs_motor.pid_esta_vivo(job.pid) is True
+    job = jobs_motor.iniciar_job("espera_teste", [str(arquivo_pid)], caminho_registro)
+    pid_comando = None
+    terminou_bem = False
+    try:
+        prazo = time.time() + 15
+        while time.time() < prazo and not (arquivo_pid.exists() and arquivo_pid.read_text().strip()):
+            time.sleep(0.2)
+        pid_comando = int(arquivo_pid.read_text().strip())
+        assert jobs_motor.pid_esta_vivo(job.pid) is True
+        assert jobs_motor.pid_esta_vivo(pid_comando) is True
 
-    parado = jobs_motor.parar_job(job.id, caminho_registro)
+        parado = jobs_motor.parar_job(job.id, caminho_registro)
 
-    assert parado.estado == "parado"
-    assert jobs_motor.pid_esta_vivo(job.pid) is False
+        assert parado.estado == "parado"
+        assert jobs_motor.pid_esta_vivo(job.pid) is False
+        assert jobs_motor.pid_esta_vivo(pid_comando) is False  # o comando real tambem morreu (/T)
+        terminou_bem = True
+    finally:
+        # limpeza, so se o teste falhou no meio (os processos podem ter ficado
+        # vivos) e so com PIDs que ESTE teste criou. Se tudo passou, os dois ja
+        # estao mortos: matar de novo "pelo PID" poderia atingir outro programa
+        # que o Windows tenha acabado de ganhar esse mesmo PID.
+        if not terminou_bem:
+            for pid in (job.pid, pid_comando):
+                if pid:
+                    subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
 
 
 def test_parar_job_nao_mata_processo_que_nao_e_o_executor_do_job(tmp_path):
@@ -305,3 +324,118 @@ def test_parar_job_com_id_inexistente_da_erro(tmp_path):
 
     with pytest.raises(ValueError):
         jobs_motor.parar_job("nao-existe", caminho_registro)
+
+
+def test_parar_job_nao_mata_processo_com_jobs_executor_mas_de_outro_job(tmp_path):
+    # simula o PID de um executor morto ter sido dado ao executor de OUTRO job
+    caminho_registro = tmp_path / "registro.json"
+    intruso = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)", "buscador.core.jobs_executor", "outro-id"]
+    )
+    try:
+        job = JobRegistrado(
+            id="job-1", modulo="cli", argv=[], pid=intruso.pid, estado="rodando",
+            log_path=str(tmp_path / "log.txt"),
+        )
+        salvar_registro([job], caminho_registro)
+
+        parado = jobs_motor.parar_job("job-1", caminho_registro)
+
+        assert parado.estado == "parado"
+        assert intruso.poll() is None  # tem "jobs_executor" na linha de comando, mas nao o id deste job
+    finally:
+        intruso.kill()
+        intruso.wait()
+
+
+def test_parar_job_nao_sobrescreve_estado_final_gravado_durante_a_consulta(tmp_path, monkeypatch):
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=999999, estado="rodando",
+        log_path=str(tmp_path / "log.txt"),
+    )
+    salvar_registro([job], caminho_registro)
+
+    def consulta_lenta_em_que_o_executor_termina(job_consultado):
+        atualizar_job("job-1", caminho_registro, estado="concluido")
+        return False
+    monkeypatch.setattr(jobs_motor, "_e_o_executor_do_job", consulta_lenta_em_que_o_executor_termina)
+
+    resultado = jobs_motor.parar_job("job-1", caminho_registro)
+
+    assert resultado.estado == "concluido"
+    assert carregar_registro(caminho_registro)[0].estado == "concluido"
+
+
+def test_parar_job_nao_marca_parado_se_o_taskkill_falha_e_o_processo_continua_vivo(tmp_path, monkeypatch):
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=999999, estado="rodando",
+        log_path=str(tmp_path / "log.txt"),
+    )
+    salvar_registro([job], caminho_registro)
+
+    class ResultadoFalso:
+        returncode = 1
+    monkeypatch.setattr(jobs_motor, "_e_o_executor_do_job", lambda job_consultado: True)
+    monkeypatch.setattr(jobs_motor, "pid_esta_vivo", lambda pid: True)
+    monkeypatch.setattr(jobs_motor.subprocess, "run", lambda *args, **kwargs: ResultadoFalso())
+
+    with pytest.raises(RuntimeError):
+        jobs_motor.parar_job("job-1", caminho_registro)
+
+    assert carregar_registro(caminho_registro)[0].estado == "rodando"
+
+
+def test_parar_job_nao_mexe_em_nada_se_nao_consegue_confirmar_o_processo(tmp_path, monkeypatch):
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=999999, estado="rodando",
+        log_path=str(tmp_path / "log.txt"),
+    )
+    salvar_registro([job], caminho_registro)
+    monkeypatch.setattr(jobs_motor, "_linha_de_comando", lambda pid: None)
+
+    with pytest.raises(RuntimeError):
+        jobs_motor.parar_job("job-1", caminho_registro)
+
+    assert carregar_registro(caminho_registro)[0].estado == "rodando"
+
+
+def test_parar_job_recusa_job_que_ainda_esta_sendo_lancado(tmp_path):
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=0, estado="rodando",
+        log_path=str(tmp_path / "log.txt"),
+        iniciado_em=datetime.now(timezone.utc).isoformat(),
+    )
+    salvar_registro([job], caminho_registro)
+
+    with pytest.raises(RuntimeError):
+        jobs_motor.parar_job("job-1", caminho_registro)
+
+    assert carregar_registro(caminho_registro)[0].estado == "rodando"
+
+
+def test_linha_de_comando_aguenta_acentos_que_o_cp1252_nao_decodifica(monkeypatch):
+    class ResultadoFalso:
+        returncode = 0
+        stdout = b"C:\\Users\\\xc9milie\\python.exe -m buscador.core.jobs_executor job-1 reg.json\r\n"
+    monkeypatch.setattr(jobs_motor.subprocess, "run", lambda *args, **kwargs: ResultadoFalso())
+
+    linha = jobs_motor._linha_de_comando(1234)
+
+    assert "jobs_executor" in linha and "job-1" in linha
+
+
+def test_linha_de_comando_devolve_none_quando_a_consulta_falha_ou_estoura_o_tempo(monkeypatch):
+    class ResultadoComErro:
+        returncode = 1
+        stdout = b""
+    monkeypatch.setattr(jobs_motor.subprocess, "run", lambda *args, **kwargs: ResultadoComErro())
+    assert jobs_motor._linha_de_comando(1234) is None
+
+    def run_que_estoura_o_tempo(*args, **kwargs):
+        raise subprocess.TimeoutExpired("powershell", 15)
+    monkeypatch.setattr(jobs_motor.subprocess, "run", run_que_estoura_o_tempo)
+    assert jobs_motor._linha_de_comando(1234) is None
