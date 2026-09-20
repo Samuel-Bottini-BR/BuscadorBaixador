@@ -223,18 +223,21 @@ TIMEOUT_POWERSHELL_SEGUNDOS = 15
 
 def _linha_de_comando(pid: int) -> Optional[str]:
     """Devolve a linha de comando do processo com esse PID. Tres resultados:
-    o texto da linha (o processo existe); '' (o processo nao existe: a consulta
-    funcionou e nao achou nada); ou None (a consulta FALHOU -- estourou o
-    tempo, o PowerShell nao abriu ou saiu com erro -- ou seja, "nao sei").
-    Quem chama precisa distinguir '' de None: '' PROVA que o processo nao
-    existe, None nao prova nada. Usa o PowerShell (que ja vem no Windows 10/11)
-    em vez de uma biblioteca nova. O PID e convertido pra inteiro antes de
-    entrar no comando, entao nada digitado pode virar codigo. A saida e lida
-    como bytes e decodificada aqui, com errors='replace': o console do
-    PowerShell usa uma codepage (ex.: cp850) que o Python nao decodifica
-    sozinho (um 'E' acentuado no caminho do programa daria UnicodeDecodeError),
-    e a guarda so compara texto ASCII -- um caractere trocado por '?' nao
-    atrapalha."""
+    o texto da linha (o processo existe); '' (a consulta FUNCIONOU -- codigo de
+    saida 0 e nada no stderr -- e nao achou processo nenhum com esse PID); ou
+    None (a consulta FALHOU, ou seja, "nao sei"): estourou o tempo, o
+    PowerShell nao abriu, saiu com codigo de erro, ou o Get-CimInstance deu
+    erro (WMI fora do ar, acesso negado...) -- e nesse caso ele sai com codigo
+    0 e stdout vazio, deixando o erro so no stderr. Por isso '' so quer dizer
+    "o processo nao existe" quando a consulta em si deu certo; quem chama
+    precisa distinguir '' de None, porque None nao prova nada. Usa o
+    PowerShell (que ja vem no Windows 10/11) em vez de uma biblioteca nova. O
+    PID e convertido pra inteiro antes de entrar no comando, entao nada
+    digitado pode virar codigo. A saida e lida como bytes e decodificada aqui,
+    com errors='replace': o console do PowerShell usa uma codepage (ex.: cp850)
+    que o Python nao decodifica sozinho (um 'E' acentuado no caminho do
+    programa daria UnicodeDecodeError), e a guarda so compara texto ASCII --
+    um caractere trocado por '?' nao atrapalha."""
     try:
         resultado = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command",
@@ -244,7 +247,7 @@ def _linha_de_comando(pid: int) -> Optional[str]:
         )
     except (subprocess.TimeoutExpired, OSError):
         return None
-    if resultado.returncode != 0:
+    if resultado.returncode != 0 or resultado.stderr.strip():
         return None
     return resultado.stdout.decode("utf-8", errors="replace").strip()
 

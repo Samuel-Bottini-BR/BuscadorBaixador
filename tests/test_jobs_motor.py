@@ -418,20 +418,29 @@ def test_parar_job_recusa_job_que_ainda_esta_sendo_lancado(tmp_path):
 
 
 def test_linha_de_comando_aguenta_acentos_que_o_cp1252_nao_decodifica(monkeypatch):
+    # \x81 e um byte que o cp1252 nao define: decodificar com ele (text=True) daria UnicodeDecodeError
     class ResultadoFalso:
         returncode = 0
-        stdout = b"C:\\Users\\\xc9milie\\python.exe -m buscador.core.jobs_executor job-1 reg.json\r\n"
-    monkeypatch.setattr(jobs_motor.subprocess, "run", lambda *args, **kwargs: ResultadoFalso())
+        stdout = b"C:\\Users\\\x81milie\\python.exe -m buscador.core.jobs_executor job-1 reg.json\r\n"
+        stderr = b""
+    argumentos_recebidos = {}
+
+    def run_falso(*args, **kwargs):
+        argumentos_recebidos.update(kwargs)
+        return ResultadoFalso()
+    monkeypatch.setattr(jobs_motor.subprocess, "run", run_falso)
 
     linha = jobs_motor._linha_de_comando(1234)
 
     assert "jobs_executor" in linha and "job-1" in linha
+    assert "timeout" in argumentos_recebidos  # sem limite de tempo, um PowerShell travado congelaria o parar_job
 
 
 def test_linha_de_comando_devolve_none_quando_a_consulta_falha_ou_estoura_o_tempo(monkeypatch):
     class ResultadoComErro:
         returncode = 1
         stdout = b""
+        stderr = b""
     monkeypatch.setattr(jobs_motor.subprocess, "run", lambda *args, **kwargs: ResultadoComErro())
     assert jobs_motor._linha_de_comando(1234) is None
 
@@ -439,3 +448,23 @@ def test_linha_de_comando_devolve_none_quando_a_consulta_falha_ou_estoura_o_temp
         raise subprocess.TimeoutExpired("powershell", 15)
     monkeypatch.setattr(jobs_motor.subprocess, "run", run_que_estoura_o_tempo)
     assert jobs_motor._linha_de_comando(1234) is None
+
+
+def test_linha_de_comando_devolve_none_se_o_wmi_der_erro_mesmo_com_codigo_zero(monkeypatch):
+    # quando o Get-CimInstance falha (WMI fora do ar, acesso negado...), o PowerShell
+    # sai com codigo 0, stdout vazio e o erro no stderr. Isso NAO pode virar "o
+    # processo nao existe" ('') -- e "nao sei" (None).
+    class ResultadoComErroDoWmi:
+        returncode = 0
+        stdout = b""
+        stderr = b"Get-CimInstance : erro do WMI"
+    monkeypatch.setattr(jobs_motor.subprocess, "run", lambda *args, **kwargs: ResultadoComErroDoWmi())
+    assert jobs_motor._linha_de_comando(1234) is None
+
+    # contraste: a consulta funcionou e nao achou o processo (codigo 0, stdout e stderr vazios)
+    class ResultadoProcessoInexistente:
+        returncode = 0
+        stdout = b""
+        stderr = b""
+    monkeypatch.setattr(jobs_motor.subprocess, "run", lambda *args, **kwargs: ResultadoProcessoInexistente())
+    assert jobs_motor._linha_de_comando(1234) == ""
