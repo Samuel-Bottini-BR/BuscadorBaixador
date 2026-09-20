@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # tests/test_jobs_registro.py
+import os
 import subprocess
 import sys
 import time
@@ -196,3 +197,41 @@ def test_trava_e_liberada_mesmo_quando_ha_erro_dentro(tmp_path):
 
     # Verifica que a trava foi liberada
     assert not trava.exists()
+
+
+def test_trava_trata_permission_error_do_windows_como_trava_ocupada(tmp_path, monkeypatch):
+    """Testa que PermissionError durante aquisição de trava é tratado como
+    'trava ocupada', não como erro fatal.
+
+    Simula o comportamento do Windows: os.open() levanta PermissionError
+    quando outro processo tem o arquivo .lock aberto momentaneamente. O código
+    deve tratar isso igual a FileExistsError e tentar novamente."""
+    caminho = tmp_path / "registro.json"
+
+    # Prepara registro válido
+    salvar_registro([_job_de_teste()], caminho)
+
+    # Guarda a função original de os.open
+    original_os_open = os.open
+    call_count = {"lock": 0}
+
+    def os_open_com_permission_error(*args, **kwargs):
+        """Wrapper que levanta PermissionError nas 2 primeiras vezes
+        que é chamado com um path terminado em .lock."""
+        if len(args) > 0 and str(args[0]).endswith(".lock"):
+            call_count["lock"] += 1
+            if call_count["lock"] <= 2:
+                raise PermissionError("Acesso negado")
+        return original_os_open(*args, **kwargs)
+
+    # Substitui os.open globalmente
+    monkeypatch.setattr("os.open", os_open_com_permission_error)
+
+    # atualizar_job deve funcionar (vai fazer retry depois do PermissionError)
+    atualizado = atualizar_job("job-teste", caminho, estado="concluido")
+
+    assert atualizado.estado == "concluido"
+    assert carregar_registro(caminho)[0].estado == "concluido"
+    # Verifica que os.open foi chamado pelo menos 3 vezes (.lock)
+    # (2 vezes com erro + 1 vez com sucesso)
+    assert call_count["lock"] >= 3

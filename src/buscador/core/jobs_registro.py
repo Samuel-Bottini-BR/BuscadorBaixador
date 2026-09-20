@@ -25,7 +25,7 @@ CAMINHO_PADRAO = Path(__file__).resolve().parent.parent.parent.parent / "jobs" /
 # sobe de src/buscador/core/ ate a raiz do projeto, depois entra em jobs/
 
 TIMEOUT_TRAVA_SEGUNDOS = 10.0    # quanto tempo esperar pela trava antes de desistir
-TRAVA_VELHA_SEGUNDOS = 30.0      # trava mais velha que isso é considerada abandonada (o dono morreu)
+TRAVA_VELHA_SEGUNDOS = 5.0       # trava mais velha que isso é abandonada (dono morreu); DEVE ser < TIMEOUT
 TENTATIVAS_WINDOWS = 10          # tentativas quando o Windows nega acesso momentaneamente
 ESPERA_ENTRE_TENTATIVAS = 0.05   # segundos entre tentativas
 
@@ -58,6 +58,11 @@ def trava_registro(caminho: Path = CAMINHO_PADRAO):
             # modificar jobs
             salvar_registro(jobs, caminho)
 
+    IMPORTANTE: Esta trava NÃO é reentrante. Dentro de `with trava_registro()`,
+    chame `carregar_registro`/`salvar_registro` diretamente. Se chamar
+    `adicionar_job()` ou `atualizar_job()` (que pegam a trava sozinhos), ficará
+    preso num deadlock até o TimeoutError.
+
     Levanta TimeoutError se esperar mais de TIMEOUT_TRAVA_SEGUNDOS.
     """
     trava = caminho.with_suffix(caminho.suffix + ".lock")
@@ -67,11 +72,11 @@ def trava_registro(caminho: Path = CAMINHO_PADRAO):
     while True:
         try:
             # Tenta criar o arquivo .lock. Só UM processo consegue (os outros
-            # recebem FileExistsError).
+            # recebem FileExistsError ou PermissionError no Windows).
             fd = os.open(trava, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             os.close(fd)
             break  # Conseguiu a trava!
-        except FileExistsError:
+        except (FileExistsError, PermissionError):
             # Trava já existe. Pode ser:
             # 1) Outro processo tem (espera)
             # 2) Processo morreu e deixou a trava pra trás (remove)
