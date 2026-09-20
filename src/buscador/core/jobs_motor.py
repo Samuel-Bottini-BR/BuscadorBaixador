@@ -411,13 +411,30 @@ def descrever_progresso(job: JobRegistrado) -> str:
     """Devolve uma linha de texto com o progresso do job, do jeito mais
     informativo possivel: le o checkpoint quando o motor conhece o formato
     (gallica_crawl, gallica_enriquecer); senao, mostra a ultima linha do
-    log."""
+    log; senao, avisa que ainda nao ha informacao.
+
+    O progresso e so uma cortesia de exibicao: o 'status' mostra todos os
+    jobs de uma vez, e um erro aqui derrubaria o comando pra todos eles.
+    Por isso, qualquer problema ao ler o checkpoint ou o log -- o arquivo
+    nao abre naquele instante porque outro processo esta trocando ele,
+    JSON pela metade ou de outra versao do programa, divisao por zero no
+    calculo -- faz cair pro proximo recurso, em vez de estourar."""
     leitor = _LEITORES_DE_PROGRESSO.get(job.modulo)
     if leitor:
-        progresso = leitor(job)
+        try:
+            progresso = leitor(job)
+        except (OSError, ValueError, TypeError, ZeroDivisionError):
+            # OSError: arquivo bloqueado/sem permissao; ValueError: JSON invalido
+            # (JSONDecodeError e ValueError) ou texto que nao decodifica; TypeError:
+            # campo a mais/a menos ou de tipo errado no checkpoint; ZeroDivisionError:
+            # lote_tamanho 0 no enriquecimento
+            progresso = None
         if progresso:
             return progresso
-    ultima_linha = _ultima_linha_do_log(Path(job.log_path))
+    try:
+        ultima_linha = _ultima_linha_do_log(Path(job.log_path))
+    except OSError:
+        ultima_linha = None
     if ultima_linha:
         return f"log: {ultima_linha}"
     return "sem informacao de progresso ainda"

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -541,3 +542,99 @@ def test_descrever_progresso_sem_checkpoint_nem_log_avisa_isso(tmp_path, monkeyp
                          log_path=str(tmp_path / "nao-existe.txt"))
 
     assert jobs_motor.descrever_progresso(job) == "sem informacao de progresso ainda"
+
+
+def test_descrever_progresso_cai_pro_log_quando_o_checkpoint_esta_truncado(tmp_path, monkeypatch):
+    # progresso e so cortesia de exibicao: um checkpoint pela metade nao pode derrubar o 'status'
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    pasta_checkpoint = tmp_path / "saidas" / "gallica_crawl" / slug_consulta("consulta")
+    pasta_checkpoint.mkdir(parents=True)
+    (pasta_checkpoint / "checkpoint.json").write_text('{"consulta": ', encoding="utf-8")
+    caminho_log = tmp_path / "log.txt"
+    caminho_log.write_text("linha do log\n", encoding="utf-8")
+    job = JobRegistrado(id="j1", modulo="gallica_crawl", argv=["consulta"], pid=1,
+                         estado="rodando", log_path=str(caminho_log))
+
+    assert jobs_motor.descrever_progresso(job) == "log: linha do log"
+
+
+def test_descrever_progresso_cai_pro_log_quando_o_checkpoint_tem_campo_desconhecido(tmp_path, monkeypatch):
+    # checkpoint de outra versao do programa, com um campo que o Checkpoint atual nao conhece
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    pasta_checkpoint = tmp_path / "saidas" / "gallica_crawl" / slug_consulta("consulta")
+    pasta_checkpoint.mkdir(parents=True)
+    (pasta_checkpoint / "checkpoint.json").write_text(json_mod.dumps({
+        "consulta": "consulta", "tamanho_pagina": 50, "proximo_start_record": 51,
+        "total_registros_api": 200, "itens_gravados": 50, "concluido": False,
+        "atualizado_em": "2026-09-17T00:00:00+00:00", "campo_novo": 1,
+    }), encoding="utf-8")
+    caminho_log = tmp_path / "log.txt"
+    caminho_log.write_text("linha do log\n", encoding="utf-8")
+    job = JobRegistrado(id="j1", modulo="gallica_crawl", argv=["consulta"], pid=1,
+                         estado="rodando", log_path=str(caminho_log))
+
+    assert jobs_motor.descrever_progresso(job) == "log: linha do log"
+
+
+def test_descrever_progresso_cai_pro_log_quando_lote_tamanho_e_zero(tmp_path, monkeypatch):
+    # 'gallica_enriquecer --lote-tamanho 0' deixa esse checkpoint em disco: dividir por zero
+    # ao calcular o total de lotes nao pode derrubar o 'status'
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    pasta_checkpoint = tmp_path / "saidas" / "gallica_crawl" / "meu-job"
+    pasta_checkpoint.mkdir(parents=True)
+    (pasta_checkpoint / "checkpoint_enriquecimento.json").write_text(json_mod.dumps({
+        "total_itens": 100, "lote_tamanho": 0, "proximo_lote": 1, "atualizado_em": "x",
+    }), encoding="utf-8")
+    caminho_log = tmp_path / "log.txt"
+    caminho_log.write_text("linha do log\n", encoding="utf-8")
+    job = JobRegistrado(id="j1", modulo="gallica_enriquecer", argv=["meu-job"], pid=1,
+                         estado="rodando", log_path=str(caminho_log))
+
+    assert jobs_motor.descrever_progresso(job) == "log: linha do log"
+
+
+def test_descrever_progresso_cai_pro_log_quando_o_checkpoint_esta_ilegivel(tmp_path, monkeypatch):
+    # no Windows, um arquivo que outro processo esta trocando naquele instante nao abre
+    # (PermissionError); o checkpoint aqui esta valido, quem falha e a leitura
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    pasta_checkpoint = tmp_path / "saidas" / "gallica_crawl" / slug_consulta("consulta")
+    pasta_checkpoint.mkdir(parents=True)
+    (pasta_checkpoint / "checkpoint.json").write_text(json_mod.dumps({
+        "consulta": "consulta", "tamanho_pagina": 50, "proximo_start_record": 51,
+        "total_registros_api": 200, "itens_gravados": 50, "concluido": False,
+        "atualizado_em": "2026-09-17T00:00:00+00:00",
+    }), encoding="utf-8")
+    caminho_log = tmp_path / "log.txt"
+    caminho_log.write_text("linha do log\n", encoding="utf-8")
+    job = JobRegistrado(id="j1", modulo="gallica_crawl", argv=["consulta"], pid=1,
+                         estado="rodando", log_path=str(caminho_log))
+    leitura_original = Path.read_text
+
+    def leitura_negada(self, *args, **kwargs):
+        if self.name == "checkpoint.json":
+            raise PermissionError("negado")
+        return leitura_original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", leitura_negada)
+
+    assert jobs_motor.descrever_progresso(job) == "log: linha do log"
+
+
+def test_descrever_progresso_diz_que_nao_ha_informacao_quando_o_log_esta_ilegivel(tmp_path, monkeypatch):
+    # log_path apontando pra uma pasta: abrir como arquivo dispara OSError
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    job = JobRegistrado(id="j1", modulo="cli", argv=[], pid=1, estado="rodando",
+                         log_path=str(tmp_path))
+
+    assert jobs_motor.descrever_progresso(job) == "sem informacao de progresso ainda"
+
+
+def test_descrever_progresso_usa_o_log_quando_o_modulo_e_conhecido_mas_ainda_nao_ha_checkpoint(tmp_path, monkeypatch):
+    # e o estado de todo job nos primeiros segundos: o comando ainda nao gravou o checkpoint
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    caminho_log = tmp_path / "log.txt"
+    caminho_log.write_text("linha do log\n", encoding="utf-8")
+    job = JobRegistrado(id="j1", modulo="gallica_crawl", argv=["consulta"], pid=1,
+                         estado="rodando", log_path=str(caminho_log))
+
+    assert jobs_motor.descrever_progresso(job) == "log: linha do log"
