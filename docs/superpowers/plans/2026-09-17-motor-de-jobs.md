@@ -1599,8 +1599,10 @@ git commit -m "feat: linha de comando do motor de jobs (jobs_cli.py)"
 **Files:**
 - Modify: `src/buscador/cli.py`
 - Modify: `src/buscador/gallica_crawl.py`
+- Modify: `src/buscador/core/jobs_notificacoes.py` (import da biblioteca do aviso passa a ser tolerante — ver Step 7b)
 - Modify: `tests/test_cli.py`
 - Modify: `tests/test_gallica_crawl.py`
+- Modify: `tests/test_jobs_notificacoes.py`
 
 **Interfaces:**
 - Consumes: `avisar_windows` (de `buscador.core.jobs_notificacoes`, Task 2)
@@ -1735,6 +1737,52 @@ por:
         return 1
 ```
 
+- [ ] **Step 7b: Endurecer o import de `jobs_notificacoes` (agora `cli` e `gallica_crawl` dependem dele)**
+
+**Por quê (decisão de revisão do plano):** depois dos steps acima, `cli.py` e `gallica_crawl.py` importam `jobs_notificacoes`, que importava `win11toast` no topo. Se a biblioteca faltar ou for incompatível com aquele Windows, o programa INTEIRO (mapear, coletar) deixaria de abrir por causa de uma "cortesia". O aviso não pode ter esse poder.
+
+Acrescentar em `tests/test_jobs_notificacoes.py` (com `import subprocess` e `import sys` no topo do arquivo, se faltarem):
+
+```python
+def test_cli_e_gallica_crawl_importam_mesmo_sem_a_biblioteca_do_aviso():
+    # sys.modules["win11toast"] = None faz "import win11toast" levantar ImportError
+    codigo = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.modules['win11toast'] = None; "
+         "import buscador.cli, buscador.gallica_crawl; "
+         "from buscador.core.jobs_notificacoes import avisar_windows; "
+         "avisar_windows('titulo', 'mensagem')"],
+        capture_output=True,
+    ).returncode
+    assert codigo == 0
+```
+
+Rodar e confirmar que FALHA (`ImportError` no processo filho, código 1). Depois, em `src/buscador/core/jobs_notificacoes.py`, trocar o import do topo e a função `_mostrar`:
+
+```python
+try:
+    from win11toast import notify
+except Exception:
+    # biblioteca ausente ou incompativel com este Windows: o aviso vira um "nao
+    # faz nada" e o resto do programa (cli, gallica_crawl...) continua funcionando
+    # -- o aviso e so uma cortesia
+    notify = None
+```
+
+```python
+def _mostrar(titulo: str, mensagem: str) -> None:
+    if notify is None:
+        return
+    try:
+        notify(titulo, mensagem)
+    except Exception:
+        # o aviso e so uma cortesia: se o Windows nao conseguir mostrar
+        # (sem suporte, erro interno), o job nao pode quebrar por causa disso
+        pass
+```
+
+(o nome `notify` continua existindo no módulo — `None` ou a função —, então o `monkeypatch.setattr("buscador.core.jobs_notificacoes.notify", ...)` do `conftest.py` e dos testes do Task 2 seguem funcionando.) Rodar o teste novo e os testes de `test_jobs_notificacoes.py` e confirmar que passam.
+
 - [ ] **Step 8: Rodar a suíte inteira e confirmar que nada quebrou**
 
 Run: `.venv\Scripts\python.exe -m pytest -q`
@@ -1743,7 +1791,7 @@ Expected: todos os testes passando (contagem anterior + os novos deste plano).
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/buscador/cli.py src/buscador/gallica_crawl.py tests/test_cli.py tests/test_gallica_crawl.py
+git add src/buscador/cli.py src/buscador/gallica_crawl.py src/buscador/core/jobs_notificacoes.py tests/test_cli.py tests/test_gallica_crawl.py tests/test_jobs_notificacoes.py
 git commit -m "feat: notificacao real do Windows quando um job trava esperando acao humana"
 ```
 
