@@ -3,6 +3,7 @@
 import os
 import subprocess
 import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -144,7 +145,9 @@ def test_pid_esta_vivo_falso_pra_pid_que_nao_existe():
 
 def test_pid_esta_vivo_falso_pra_pid_zero():
     # pid 0 e o "System Idle Process" do Windows (o tasklist o lista como vivo);
-    # um job cujo lancamento falhou fica com pid=0 e nao pode parecer vivo
+    # um job recem-lancado fica com pid=0 por alguns milissegundos e o proprio
+    # pid_esta_vivo nunca considera pid 0 vivo -- quem trata essa janela de
+    # lancamento e o reconciliar_estados (ver os testes de "recem_lancado")
     assert jobs_motor.pid_esta_vivo(0) is False
 
 
@@ -193,3 +196,54 @@ def test_reconciliar_nao_sobrescreve_estado_final_gravado_durante_a_checagem(tmp
     jobs = jobs_motor.reconciliar_estados(caminho_registro)
 
     assert jobs[0].estado == "concluido"
+
+
+def test_reconciliar_nao_marca_interrompido_job_recem_lancado_com_pid_zero(tmp_path):
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=0, estado="rodando",
+        log_path=str(tmp_path / "log.txt"),
+        iniciado_em=datetime.now(timezone.utc).isoformat(),
+    )
+    salvar_registro([job], caminho_registro)
+
+    jobs = jobs_motor.reconciliar_estados(caminho_registro)
+
+    assert jobs[0].estado == "rodando"
+
+
+def test_reconciliar_marca_interrompido_job_com_pid_zero_antigo_ou_sem_data(tmp_path):
+    caminho_registro = tmp_path / "registro.json"
+    antigo = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    jobs_antes = [
+        JobRegistrado(id="velho", modulo="cli", argv=[], pid=0, estado="rodando",
+                      log_path=str(tmp_path / "a.txt"), iniciado_em=antigo),
+        JobRegistrado(id="sem-data", modulo="cli", argv=[], pid=0, estado="rodando",
+                      log_path=str(tmp_path / "b.txt"), iniciado_em=""),
+    ]
+    salvar_registro(jobs_antes, caminho_registro)
+
+    jobs = jobs_motor.reconciliar_estados(caminho_registro)
+
+    assert [j.estado for j in jobs] == ["interrompido", "interrompido"]
+
+
+def test_reconciliar_nao_marca_se_o_pid_real_foi_gravado_durante_a_checagem(tmp_path, monkeypatch):
+    # o lancador grava o pid real depois do snapshot da reconciliacao;
+    # como o pid mudou, o job nao pode ser marcado "interrompido"
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=999999, estado="rodando",
+        log_path=str(tmp_path / "log.txt"),
+    )
+    salvar_registro([job], caminho_registro)
+
+    def pid_morto_mas_lancador_grava_o_pid_real(pid):
+        atualizar_job("job-1", caminho_registro, pid=os.getpid())
+        return False
+    monkeypatch.setattr(jobs_motor, "pid_esta_vivo", pid_morto_mas_lancador_grava_o_pid_real)
+
+    jobs = jobs_motor.reconciliar_estados(caminho_registro)
+
+    assert jobs[0].estado == "rodando"
+    assert jobs[0].pid == os.getpid()

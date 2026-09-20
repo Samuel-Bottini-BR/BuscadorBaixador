@@ -154,15 +154,42 @@ def pid_esta_vivo(pid: int) -> bool:
     return str(pid) in resultado.stdout
 
 
-def _marcar_interrompido(id_job: str, caminho_registro: Path) -> None:
+TOLERANCIA_LANCAMENTO_SEGUNDOS = 30.0
+# um job recem-lancado fica "rodando" com pid=0 por alguns milissegundos
+# (iniciar_job grava o registro ANTES de lancar o executor e so grava o pid
+# DEPOIS). Enquanto o job for mais novo que isso, pid=0 significa "lancando
+# agora" -- nao "morto".
+
+
+def _lancamento_em_andamento(job: JobRegistrado) -> bool:
+    """True se o job ainda esta na janela de lancamento: o pid ainda nao foi
+    gravado (0 ou negativo) E o job foi iniciado ha menos de
+    TOLERANCIA_LANCAMENTO_SEGUNDOS. Sem 'iniciado_em' (vazio ou ilegivel) nao
+    da pra provar que o job e recente, entao ele conta como antigo -- um pid 0
+    antigo e de um lancador que morreu antes de gravar o pid."""
+    if job.pid > 0:
+        return False
+    try:
+        iniciado_em = datetime.fromisoformat(job.iniciado_em)
+    except ValueError:
+        return False
+    if iniciado_em.tzinfo is None:
+        iniciado_em = iniciado_em.replace(tzinfo=timezone.utc)
+    idade = datetime.now(timezone.utc) - iniciado_em
+    return idade.total_seconds() < TOLERANCIA_LANCAMENTO_SEGUNDOS
+
+
+def _marcar_interrompido(id_job: str, pid_verificado: int, caminho_registro: Path) -> None:
     """Marca o job como 'interrompido' -- mas so se, DENTRO da trava do
-    registro, ele ainda constar como 'rodando'. O executor pode ter gravado
-    'concluido' ou 'erro' um instante antes de o processo morrer, e isso nao
-    pode ser sobrescrito."""
+    registro, ele ainda estiver como foi conferido: 'rodando' E com o mesmo
+    pid que foi dado como morto (compare-and-set). O executor pode ter gravado
+    'concluido' ou 'erro' um instante antes de o processo morrer, e o lancador
+    pode ter gravado o pid real depois da conferencia; nenhum dos dois pode
+    ser sobrescrito."""
     with trava_registro(caminho_registro):
         jobs = carregar_registro(caminho_registro)
         for job in jobs:
-            if job.id == id_job and job.estado == "rodando":
+            if job.id == id_job and job.estado == "rodando" and job.pid == pid_verificado:
                 job.estado = "interrompido"
                 job.atualizado_em = datetime.now(timezone.utc).isoformat()
                 salvar_registro(jobs, caminho_registro)
@@ -175,8 +202,15 @@ def reconciliar_estados(caminho_registro: Path = CAMINHO_PADRAO) -> list[JobRegi
     executor nao tiver atualizado o estado antes de morrer (ex.: foi morto
     por fora, ou crashou sem dar tempo de atualizar) -- marca como
     'interrompido', pra nunca mostrar um job como 'rodando' quando ja
-    morreu. Devolve a lista ja atualizada."""
+    morreu. Job recem-lancado (pid ainda 0, dentro da tolerancia de
+    lancamento) e poupado. Devolve a lista ja atualizada."""
+    # ideia central: o snapshot do registro e o pid_esta_vivo (lento, chama um
+    # programa externo) ficam FORA da trava -- ela nao pode ser segurada
+    # durante o tasklist. So a marcacao, curta, entra na trava, e la dentro
+    # _marcar_interrompido confere de novo se o job continua como foi visto.
     for job in carregar_registro(caminho_registro):
-        if job.estado == "rodando" and not pid_esta_vivo(job.pid):
-            _marcar_interrompido(job.id, caminho_registro)
+        if job.estado != "rodando" or _lancamento_em_andamento(job):
+            continue
+        if not pid_esta_vivo(job.pid):
+            _marcar_interrompido(job.id, job.pid, caminho_registro)
     return carregar_registro(caminho_registro)
