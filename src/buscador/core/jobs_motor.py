@@ -214,3 +214,53 @@ def reconciliar_estados(caminho_registro: Path = CAMINHO_PADRAO) -> list[JobRegi
         if not pid_esta_vivo(job.pid):
             _marcar_interrompido(job.id, job.pid, caminho_registro)
     return carregar_registro(caminho_registro)
+
+
+def _linha_de_comando(pid: int) -> str:
+    """Devolve a linha de comando do processo com esse PID ('' se ele nao
+    existir ou se a consulta falhar). Usa o PowerShell (que ja vem no Windows
+    10/11) em vez de uma biblioteca nova. O PID e convertido pra inteiro
+    antes de entrar no comando, entao nada digitado pode virar codigo."""
+    resultado = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+         f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
+        capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    return resultado.stdout.strip()
+
+
+def _e_o_executor_do_job(job: JobRegistrado) -> bool:
+    """True so se o processo com o PID do job e mesmo o executor DESTE job
+    (a linha de comando dele contem o modulo executor e o id do job). Protege
+    contra o Windows ter reaproveitado o PID de um executor morto para OUTRO
+    programa: matar esse outro programa seria um desastre. Se a consulta
+    falhar, devolve False -- na duvida, nao mata."""
+    if job.pid <= 0:
+        return False
+    linha = _linha_de_comando(job.pid)
+    return "jobs_executor" in linha and job.id in linha
+
+
+def parar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado:
+    """Para um job que o registro diz que esta 'rodando': mata o executor (e,
+    com ele, o comando real que roda por baixo, porque e processo-filho) --
+    mas SO se o processo do PID guardado for mesmo o executor deste job -- e
+    marca o job como 'parado' de proposito (diferente de 'interrompido', que
+    e quando morreu sozinho). Um job que ja terminou e devolvido sem mudar
+    nada. O progresso ja salvo em disco (checkpoint) nao e afetado -- rodar
+    'retomar' depois continua de onde parou."""
+    jobs = {job.id: job for job in carregar_registro(caminho_registro)}
+    job = jobs.get(id_job)
+    if job is None:
+        raise ValueError(f"Nenhum job encontrado com id '{id_job}'")
+    if job.estado != "rodando":
+        return job
+
+    if _e_o_executor_do_job(job):
+        subprocess.run(
+            ["taskkill", "/PID", str(job.pid), "/T", "/F"],
+            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        # "/T" mata a arvore inteira (o executor e todo processo-filho dele,
+        # nao so o executor sozinho) -- "/F" forca o encerramento
+    return atualizar_job(id_job, caminho_registro, estado="parado")

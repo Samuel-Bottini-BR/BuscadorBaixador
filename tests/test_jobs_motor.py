@@ -2,6 +2,7 @@
 # tests/test_jobs_motor.py
 import os
 import subprocess
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -247,3 +248,60 @@ def test_reconciliar_nao_marca_se_o_pid_real_foi_gravado_durante_a_checagem(tmp_
 
     assert jobs[0].estado == "rodando"
     assert jobs[0].pid == os.getpid()
+
+
+def test_parar_job_marca_estado_parado_e_mata_o_processo(tmp_path, monkeypatch):
+    caminho_registro = tmp_path / "registro.json"
+    monkeypatch.setitem(jobs_motor.MODULOS_PERMITIDOS, "espera_teste", "tests.fixtures.job_lento_fake")
+    monkeypatch.setattr(jobs_motor, "PASTA_JOBS", tmp_path / "jobs")
+
+    job = jobs_motor.iniciar_job("espera_teste", [], caminho_registro)
+    time.sleep(2)  # da tempo do executor (e do comando lento) subirem de verdade
+    assert jobs_motor.pid_esta_vivo(job.pid) is True
+
+    parado = jobs_motor.parar_job(job.id, caminho_registro)
+
+    assert parado.estado == "parado"
+    assert jobs_motor.pid_esta_vivo(job.pid) is False
+
+
+def test_parar_job_nao_mata_processo_que_nao_e_o_executor_do_job(tmp_path):
+    # simula o Windows ter reaproveitado o PID do executor morto para outro programa
+    caminho_registro = tmp_path / "registro.json"
+    intruso = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        job = JobRegistrado(
+            id="job-1", modulo="cli", argv=[], pid=intruso.pid, estado="rodando",
+            log_path=str(tmp_path / "log.txt"),
+        )
+        salvar_registro([job], caminho_registro)
+
+        parado = jobs_motor.parar_job("job-1", caminho_registro)
+
+        assert parado.estado == "parado"
+        assert intruso.poll() is None  # continua vivo: nao era o executor deste job
+    finally:
+        intruso.kill()
+        intruso.wait()
+
+
+def test_parar_job_que_ja_terminou_nao_muda_nada(tmp_path):
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=999999, estado="concluido",
+        log_path=str(tmp_path / "log.txt"),
+    )
+    salvar_registro([job], caminho_registro)
+
+    resultado = jobs_motor.parar_job("job-1", caminho_registro)
+
+    assert resultado.estado == "concluido"
+    assert carregar_registro(caminho_registro)[0].estado == "concluido"
+
+
+def test_parar_job_com_id_inexistente_da_erro(tmp_path):
+    caminho_registro = tmp_path / "registro.json"
+    salvar_registro([], caminho_registro)
+
+    with pytest.raises(ValueError):
+        jobs_motor.parar_job("nao-existe", caminho_registro)
