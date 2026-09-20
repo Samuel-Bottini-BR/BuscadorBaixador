@@ -3,6 +3,8 @@
 import subprocess
 import time
 
+import pytest
+
 from buscador.core import jobs_motor
 from buscador.core.jobs_registro import JobRegistrado, carregar_registro, salvar_registro
 
@@ -89,3 +91,43 @@ def test_lancar_destacado_tenta_de_novo_sem_breakaway_se_o_windows_negar(monkeyp
     assert chamadas[0] & subprocess.CREATE_BREAKAWAY_FROM_JOB
     assert not chamadas[1] & subprocess.CREATE_BREAKAWAY_FROM_JOB
     assert chamadas[1] & subprocess.DETACHED_PROCESS
+
+
+def test_iniciar_job_marca_erro_e_repropaga_se_o_lancamento_falhar(tmp_path, monkeypatch):
+    caminho_registro = tmp_path / "registro.json"
+    monkeypatch.setitem(jobs_motor.MODULOS_PERMITIDOS, "echo_teste", "tests.fixtures.job_fake")
+    monkeypatch.setattr(jobs_motor, "PASTA_JOBS", tmp_path / "jobs")
+
+    def lancar_que_falha(comando):
+        raise OSError("nao consegui lancar")
+    monkeypatch.setattr(jobs_motor, "_lancar_destacado", lancar_que_falha)
+
+    with pytest.raises(OSError):
+        jobs_motor.iniciar_job("echo_teste", [], caminho_registro)
+
+    jobs = carregar_registro(caminho_registro)
+    assert len(jobs) == 1
+    assert jobs[0].estado == "erro"
+
+
+def test_executar_job_forca_saida_sem_buffer_e_em_utf8(tmp_path, monkeypatch):
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=0, estado="rodando",
+        log_path=str(tmp_path / "log.txt"), alvo="tests.fixtures.job_fake",
+    )
+    salvar_registro([job], caminho_registro)
+    capturado = {}
+
+    class ResultadoFalso:
+        returncode = 0
+
+    def run_falso(comando, **kwargs):
+        capturado.update(kwargs)
+        return ResultadoFalso()
+    monkeypatch.setattr(jobs_motor.subprocess, "run", run_falso)
+
+    jobs_motor.executar_job("job-1", caminho_registro)
+
+    assert capturado["env"]["PYTHONUNBUFFERED"] == "1"
+    assert capturado["env"]["PYTHONIOENCODING"] == "utf-8"

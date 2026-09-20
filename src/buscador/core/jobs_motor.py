@@ -91,13 +91,20 @@ def iniciar_job(modulo: str, argv: list[str], caminho_registro: Path = CAMINHO_P
         # um processo separado e so enxerga o que esta em disco
     )
     adicionar_job(job, caminho_registro)
-    # grava o job no registro ANTES de lancar o processo executor -- assim,
-    # mesmo que o lancamento falhe, o registro nao fica com um job
-    # "fantasma" que o executor nunca chegou a ver
+    # grava o job no registro ANTES de lancar o processo executor porque o
+    # executor le o registro assim que sobe -- se o job ainda nao estivesse
+    # la, ele nao acharia nada pra executar
 
-    processo = _lancar_destacado(
-        [sys.executable, "-m", "buscador.core.jobs_executor", id_job, str(caminho_registro)]
-    )
+    try:
+        processo = _lancar_destacado(
+            [sys.executable, "-m", "buscador.core.jobs_executor", id_job, str(caminho_registro)]
+        )
+    except Exception:
+        atualizar_job(id_job, caminho_registro, estado="erro")
+        raise
+    # se o lancamento falhar, o job ja esta no registro (gravado acima): marca
+    # como "erro" pra nao sobrar um "rodando" fantasma com pid 0, e deixa a
+    # excecao subir pra quem chamou saber que o job nao comecou
     return atualizar_job(id_job, caminho_registro, pid=processo.pid)
 
 
@@ -113,9 +120,12 @@ def executar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> None:
 
     alvo = job.alvo or MODULOS_PERMITIDOS[job.modulo]
     comando = [sys.executable, "-m", alvo, *job.argv]
-    ambiente = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    # forca UTF-8 na saida do comando -- sem isso, o Windows grava o log em
-    # cp1252 e os acentos ficam ilegiveis quando lemos o log depois
+    ambiente = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+    # PYTHONIOENCODING: forca UTF-8 na saida do comando -- sem isso, o Windows
+    # grava o log em cp1252 e os acentos ficam ilegiveis quando lemos o log depois.
+    # PYTHONUNBUFFERED: sem isso, quando a saida vai pra um arquivo o Python a
+    # guarda num buffer -- o log ficaria vazio ate o fim do job e perderia o
+    # final se o job fosse morto (parar_job) antes de o buffer ser descarregado
     with open(job.log_path, "w", encoding="utf-8") as arquivo_log:
         resultado = subprocess.run(
             comando, stdout=arquivo_log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
