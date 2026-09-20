@@ -1201,7 +1201,7 @@ def descrever_progresso(job: JobRegistrado) -> str:
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 33 no total).
+Expected: todos passando (agora 39 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -1214,28 +1214,42 @@ git commit -m "feat: motor de jobs -- progresso a partir dos checkpoints conheci
 
 ### Task 7: Motor — retomar um job
 
+> **Por que este task tem uma trava contra duplicidade (decisão de revisão do plano):** retomar = iniciar um job novo com o mesmo módulo e os mesmos argumentos; os comandos (`gallica_crawl`, `gallica_enriquecer`) continuam sozinhos do checkpoint. Se já existe um job idêntico `rodando`, um segundo executor mexeria no MESMO checkpoint (dobrando a taxa de requisições contra a Gallica e disputando o arquivo). Por isso `retomar_job` primeiro reconcilia os estados (pra um "rodando" que na verdade morreu não bloquear ninguém) e recusa se ainda houver um job idêntico rodando.
+
 **Files:**
 - Modify: `src/buscador/core/jobs_motor.py`
 - Test: `tests/test_jobs_motor.py`
 
 **Interfaces:**
-- Produces: `retomar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado`
+- Consumes: `carregar_registro`, `CAMINHO_PADRAO` (Task 1), `iniciar_job` (Task 3), `reconciliar_estados` (Task 4)
+- Produces: `retomar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado` (levanta `ValueError` se o id não existir; `RuntimeError` se já houver um job idêntico — mesmo módulo e mesmos argumentos — `rodando`)
 
 - [ ] **Step 1: Escrever os testes**
 
 ```python
 # acrescentar em tests/test_jobs_motor.py
+def _esperar_o_job_terminar(id_job, caminho_registro, segundos=20):
+    prazo = time.time() + segundos
+    estado = "rodando"
+    while time.time() < prazo and estado == "rodando":
+        time.sleep(0.3)
+        estado = [j for j in carregar_registro(caminho_registro) if j.id == id_job][0].estado
+    return estado
+
+
 def test_retomar_job_inicia_um_job_novo_com_mesmo_modulo_e_argv(tmp_path, monkeypatch):
     caminho_registro = tmp_path / "registro.json"
     monkeypatch.setitem(jobs_motor.MODULOS_PERMITIDOS, "echo_teste", "tests.fixtures.job_fake")
     monkeypatch.setattr(jobs_motor, "PASTA_JOBS", tmp_path / "jobs")
     original = jobs_motor.iniciar_job("echo_teste", ["0"], caminho_registro)
+    assert _esperar_o_job_terminar(original.id, caminho_registro) == "concluido"
 
     retomado = jobs_motor.retomar_job(original.id, caminho_registro)
 
     assert retomado.id != original.id
     assert retomado.modulo == "echo_teste"
     assert retomado.argv == ["0"]
+    _esperar_o_job_terminar(retomado.id, caminho_registro)  # nao deixa executor pra tras
 
 
 def test_retomar_job_com_id_inexistente_da_erro(tmp_path):
@@ -1244,6 +1258,36 @@ def test_retomar_job_com_id_inexistente_da_erro(tmp_path):
 
     with pytest.raises(ValueError):
         jobs_motor.retomar_job("nao-existe", caminho_registro)
+
+
+def test_retomar_job_recusa_se_ja_existe_job_identico_rodando(tmp_path):
+    caminho_registro = tmp_path / "registro.json"
+    base = dict(modulo="cli", argv=["a", "b"], log_path=str(tmp_path / "log.txt"))
+    parado = JobRegistrado(id="job-parado", pid=0, estado="parado", **base)
+    rodando = JobRegistrado(id="job-rodando", pid=os.getpid(), estado="rodando", **base)
+    salvar_registro([parado, rodando], caminho_registro)
+
+    with pytest.raises(RuntimeError):
+        jobs_motor.retomar_job("job-parado", caminho_registro)
+
+    assert len(carregar_registro(caminho_registro)) == 2  # nao lancou nada
+
+
+def test_retomar_job_ignora_job_identico_que_na_verdade_ja_morreu(tmp_path, monkeypatch):
+    monkeypatch.setitem(jobs_motor.MODULOS_PERMITIDOS, "echo_teste", "tests.fixtures.job_fake")
+    monkeypatch.setattr(jobs_motor, "PASTA_JOBS", tmp_path / "jobs")
+    caminho_registro = tmp_path / "registro.json"
+    base = dict(modulo="echo_teste", argv=["0"], log_path=str(tmp_path / "log.txt"))
+    parado = JobRegistrado(id="job-parado", pid=0, estado="parado", **base)
+    fantasma = JobRegistrado(id="job-fantasma", pid=999999, estado="rodando", **base)
+    salvar_registro([parado, fantasma], caminho_registro)
+
+    novo = jobs_motor.retomar_job("job-parado", caminho_registro)
+
+    assert novo.id not in ("job-parado", "job-fantasma")
+    estados = {job.id: job.estado for job in carregar_registro(caminho_registro)}
+    assert estados["job-fantasma"] == "interrompido"
+    _esperar_o_job_terminar(novo.id, caminho_registro)  # nao deixa executor pra tras
 ```
 
 - [ ] **Step 2: Rodar e confirmar que falham**
@@ -1256,27 +1300,37 @@ Expected: `AttributeError: module 'buscador.core.jobs_motor' has no attribute 'r
 ```python
 def retomar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado:
     """Inicia um job NOVO com o mesmo modulo e os mesmos argumentos de um
-    job anterior (rodando ou nao) -- nao precisa de nada especial pra
-    'retomar' de verdade, porque os proprios comandos (gallica_crawl,
-    gallica_enriquecer) ja sabem continuar de onde pararam sozinhos, pelo
-    checkpoint deles, desde que sejam chamados com a mesma consulta/job."""
-    jobs = {job.id: job for job in carregar_registro(caminho_registro)}
+    job anterior -- nao precisa de nada especial pra 'retomar' de verdade,
+    porque os proprios comandos (gallica_crawl, gallica_enriquecer) ja
+    sabem continuar de onde pararam sozinhos, pelo checkpoint deles, desde
+    que sejam chamados com a mesma consulta/job. Recusa (RuntimeError) se
+    ja existe um job identico rodando: um segundo executor mexeria no MESMO
+    checkpoint. Reconcilia os estados primeiro, pra um job que o registro
+    ainda acha 'rodando' mas ja morreu nao bloquear a retomada."""
+    jobs = {job.id: job for job in reconciliar_estados(caminho_registro)}
     job_antigo = jobs.get(id_job)
     if job_antigo is None:
         raise ValueError(f"Nenhum job encontrado com id '{id_job}'")
+    for outro in jobs.values():
+        if (outro.estado == "rodando" and outro.modulo == job_antigo.modulo
+                and outro.argv == job_antigo.argv):
+            raise RuntimeError(
+                f"Ja existe um job identico rodando ('{outro.id}'); pare-o antes de retomar, "
+                "senao dois executores mexeriam no mesmo progresso."
+            )
     return iniciar_job(job_antigo.modulo, job_antigo.argv, caminho_registro)
 ```
 
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 35 no total).
+Expected: todos passando (agora 43 no total).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/buscador/core/jobs_motor.py tests/test_jobs_motor.py
-git commit -m "feat: motor de jobs -- retomar um job"
+git commit -m "feat: motor de jobs -- retomar um job (sem duplicar um identico rodando)"
 ```
 
 ---
@@ -1421,7 +1475,7 @@ def _comando_parar(args):
 def _comando_retomar(args):
     try:
         job = retomar_job(args.id, args.registro)
-    except ValueError as erro:
+    except (ValueError, RuntimeError) as erro:
         print(f"Nao deu para retomar: {erro}")
         return 1
     print(f"Job '{args.id}' retomado como '{job.id}' (pid: {job.pid}).")
