@@ -59,11 +59,16 @@ def trava_registro(caminho: Path = CAMINHO_PADRAO):
             salvar_registro(jobs, caminho)
 
     IMPORTANTE: Esta trava NÃO é reentrante. Dentro de `with trava_registro()`,
-    chame `carregar_registro`/`salvar_registro` diretamente. Se chamar
-    `adicionar_job()` ou `atualizar_job()` (que pegam a trava sozinhos), ficará
-    preso num deadlock até o TimeoutError.
+    chame `carregar_registro`/`salvar_registro` diretamente; NÃO chame
+    `adicionar_job()` nem `atualizar_job()` (que pegam a trava sozinhos).
+    Aninhar NÃO dá TimeoutError: como TRAVA_VELHA_SEGUNDOS (5) é menor que
+    TIMEOUT_TRAVA_SEGUNDOS (10), a chamada de dentro espera uns 5 s, acha que a
+    trava do próprio chamador é "abandonada", REMOVE-a e segue em frente --
+    e a exclusão mútua se perde em silêncio (dois processos passam a poder
+    mexer no registro ao mesmo tempo). Por isso a regra continua: não aninhe.
 
-    Levanta TimeoutError se esperar mais de TIMEOUT_TRAVA_SEGUNDOS.
+    Levanta TimeoutError se esperar mais de TIMEOUT_TRAVA_SEGUNDOS pela trava
+    (inclusive quando a trava está velha mas não dá pra removê-la).
     """
     trava = caminho.with_suffix(caminho.suffix + ".lock")
     trava.parent.mkdir(parents=True, exist_ok=True)
@@ -87,8 +92,14 @@ def trava_registro(caminho: Path = CAMINHO_PADRAO):
                     try:
                         trava.unlink()
                     except OSError:
-                        pass  # Pode ter sido outro processo removendo também
-                    continue  # Tenta novamente
+                        # Não deu pra remover (outro processo removeu antes, o
+                        # antivírus/indexador está segurando o arquivo, ou o
+                        # .lock virou uma pasta). Aqui NÃO pode haver `continue`:
+                        # cai na checagem de timeout e no sleep logo abaixo --
+                        # senão o laço girava sem parar, sem nunca desistir.
+                        pass
+                    else:
+                        continue  # Removeu com sucesso: tenta criar a trava de novo já
             except OSError:
                 pass  # stat falhou, ignora (outro processo pode estar mexendo)
 

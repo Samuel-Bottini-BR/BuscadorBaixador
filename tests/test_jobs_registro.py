@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -181,6 +182,49 @@ def test_trava_recente_de_outro_processo_estoura_timeout(tmp_path, monkeypatch):
     # atualizar_job deve falhar com TimeoutError
     with pytest.raises(TimeoutError):
         atualizar_job("job-teste", caminho, estado="concluido")
+
+
+def test_trava_velha_que_nao_da_pra_remover_estoura_timeout_em_vez_de_girar_pra_sempre(tmp_path, monkeypatch):
+    """Trava velha (dono morreu) que o unlink NUNCA consegue apagar -- antivirus
+    ou indexador segurando o arquivo, ou o .lock virou uma pasta. O laco tem que
+    cair na checagem de timeout (e no sleep); antes, o `continue` pulava as duas
+    coisas e o laco girava sem parar, sem nunca levantar TimeoutError."""
+    caminho = tmp_path / "registro.json"
+    trava = caminho.with_suffix(caminho.suffix + ".lock")
+    salvar_registro([_job_de_teste()], caminho)
+
+    # trava com 120 s de idade: bem mais velha que TRAVA_VELHA_SEGUNDOS
+    antigo = time.time() - 120
+    trava.touch()
+    os.utime(trava, (antigo, antigo))
+
+    monkeypatch.setattr(jobs_registro, "TIMEOUT_TRAVA_SEGUNDOS", 0.3)
+
+    chamadas = {"unlink": 0}
+    unlink_original = Path.unlink
+
+    def unlink_sempre_negado(self, *args, **kwargs):
+        if self.name.endswith(".lock"):
+            chamadas["unlink"] += 1
+            # Rede de seguranca do teste: sem o conserto o laco gira sem parar,
+            # chamando o unlink sem intervalo. Com o conserto, cada volta dorme
+            # 0,05 s e o timeout de 0,3 s encerra tudo em poucas voltas.
+            assert chamadas["unlink"] < 200, "laco ocupado: unlink chamado sem parar e sem timeout"
+            raise PermissionError("Acesso negado")
+        return unlink_original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink_sempre_negado)
+
+    with pytest.raises(TimeoutError):
+        atualizar_job("job-teste", caminho, estado="concluido")
+
+
+def test_trava_velha_e_menor_que_o_timeout():
+    """Invariante que o laco de trava_registro assume: uma trava abandonada
+    tem que ser detectada ANTES de quem espera desistir por timeout. (Efeito
+    colateral conhecido: um `with trava_registro()` aninhado espera ~5 s e depois
+    remove a trava do proprio chamador -- por isso a regra 'nao aninhe'.)"""
+    assert jobs_registro.TRAVA_VELHA_SEGUNDOS < jobs_registro.TIMEOUT_TRAVA_SEGUNDOS
 
 
 def test_trava_e_liberada_mesmo_quando_ha_erro_dentro(tmp_path):
