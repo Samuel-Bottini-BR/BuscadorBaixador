@@ -58,9 +58,12 @@ def _comando_parar(args):
 
 
 def _comando_retomar(args):
+    # retomar_job levanta ValueError (id inexistente) ou RuntimeError (ja ha um
+    # job identico rodando) e, por terminar em iniciar_job, tambem OSError (nao
+    # deu pra lancar o processo; o job novo fica marcado "erro" no registro)
     try:
         job = retomar_job(args.id, args.registro)
-    except (ValueError, RuntimeError) as erro:
+    except (ValueError, RuntimeError, OSError) as erro:
         print(f"Nao deu para retomar: {erro}")
         return 1
     print(f"Job '{args.id}' retomado como '{job.id}' (pid: {job.pid}).")

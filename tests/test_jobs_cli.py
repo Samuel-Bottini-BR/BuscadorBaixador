@@ -75,8 +75,9 @@ def test_iniciar_repassa_flags_do_comando_de_verdade_sem_tentar_interpreta_las(t
 
     assert codigo == 0
     assert carregar_registro(caminho_registro)[0].argv == ["--adapter", "phpbb", "0"]
-    # espera o executor terminar pra nao deixar processo pra tras (o job_fake vai dar
-    # erro com "--adapter" como codigo de saida; aqui isso nao importa)
+    # espera o executor terminar pra nao deixar processo pra tras (o job_fake tenta
+    # fazer int("--adapter") e levanta ValueError, entao o job termina em erro; aqui
+    # isso nao importa)
     prazo = time.time() + 20
     while time.time() < prazo and carregar_registro(caminho_registro)[0].estado == "rodando":
         time.sleep(0.3)
@@ -94,6 +95,24 @@ def test_iniciar_mostra_mensagem_amigavel_se_o_lancamento_falhar(tmp_path, monke
 
     assert codigo == 1
     assert "Nao deu para iniciar" in capsys.readouterr().out
+
+
+def test_retomar_mostra_mensagem_amigavel_se_o_lancamento_falhar(tmp_path, monkeypatch, capsys):
+    caminho_registro = tmp_path / "registro.json"
+    monkeypatch.setattr(jobs_motor, "PASTA_JOBS", tmp_path / "jobs")
+    job_antigo = JobRegistrado(id="j1", modulo="cli", argv=["0"], pid=0, estado="concluido",
+                                log_path=str(tmp_path / "log.txt"))
+    salvar_registro([job_antigo], caminho_registro)
+
+    def lancar_que_falha(comando):
+        raise OSError("nao consegui lancar")
+    monkeypatch.setattr(jobs_motor, "_lancar_destacado", lancar_que_falha)
+
+    codigo = jobs_cli.main(["--registro", str(caminho_registro), "retomar", "j1"])
+
+    assert codigo == 1
+    assert "Nao deu para retomar" in capsys.readouterr().out
+    assert [j.estado for j in carregar_registro(caminho_registro)] == ["concluido", "erro"]
 
 
 def test_status_nao_quebra_com_caracteres_que_o_console_nao_suporta(tmp_path, monkeypatch):
