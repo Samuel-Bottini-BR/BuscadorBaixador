@@ -45,6 +45,40 @@ def test_salvar_e_carregar_registro_ida_e_volta(tmp_path):
     assert jobs[0].alvo == "buscador.gallica_crawl"
 
 
+@pytest.mark.parametrize("conteudo", [
+    "{",                                                  # JSON pela metade
+    "",                                                   # arquivo vazio
+    '{"outra_chave": []}',                                # sem a chave "jobs"
+    "[]",                                                 # JSON valido, mas nao e um objeto
+    '{"jobs": [{"campo_novo": 1}]}',                      # campo desconhecido / faltando (formato antigo)
+    '{"jobs": [5]}',                                      # item que nao e um objeto
+])
+def test_carregar_registro_ilegivel_levanta_um_value_error_que_nomeia_o_arquivo(tmp_path, conteudo):
+    # um erro cru (JSONDecodeError/KeyError/TypeError) nao diz qual arquivo esta
+    # ruim nem o que fazer; e devolver [] em silencio seria pior: o proximo save
+    # apagaria o registro inteiro
+    caminho = tmp_path / "registro.json"
+    caminho.write_text(conteudo, encoding="utf-8")
+
+    with pytest.raises(ValueError) as erro:
+        carregar_registro(caminho)
+
+    assert str(caminho) in str(erro.value)
+    assert "ilegivel" in str(erro.value)
+
+
+def test_registro_ilegivel_nao_e_sobrescrito_por_um_adicionar_job(tmp_path):
+    caminho = tmp_path / "registro.json"
+    trava = caminho.with_suffix(caminho.suffix + ".lock")
+    caminho.write_text('{"jobs": [{"campo_novo": 1}]}', encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        adicionar_job(_job_de_teste(), caminho)
+
+    assert caminho.read_text(encoding="utf-8") == '{"jobs": [{"campo_novo": 1}]}'  # intacto, para o dono poder consertar
+    assert not trava.exists()  # e a trava foi liberada
+
+
 def test_salvar_nao_deixa_arquivo_tmp_para_tras(tmp_path):
     caminho = tmp_path / "registro.json"
     salvar_registro([_job_de_teste()], caminho)

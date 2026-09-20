@@ -150,12 +150,29 @@ def carregar_registro(caminho: Path = CAMINHO_PADRAO) -> list[JobRegistrado]:
     (primeira vez que o motor roda), devolve lista vazia em vez de erro.
 
     Usa retry logic pra evitar PermissionError quando outro processo tem o
-    arquivo aberto momentaneamente no Windows."""
+    arquivo aberto momentaneamente no Windows.
+
+    Se o arquivo existe mas nao da pra entender (JSON quebrado, ou de uma
+    versao do programa com campos diferentes), levanta UM ValueError claro que
+    diz QUAL arquivo esta ruim. Nunca devolve lista vazia nesse caso: quem
+    chama costuma salvar de volta logo depois, e isso apagaria em silencio o
+    registro inteiro (que, mesmo ruim, o dono pode querer consertar na mao)."""
     if not caminho.exists():
         return []
-    conteudo = _com_tentativas(lambda: caminho.read_text(encoding="utf-8"))
-    dados = json.loads(conteudo)
-    return [JobRegistrado(**item) for item in dados["jobs"]]
+    try:
+        conteudo = _com_tentativas(lambda: caminho.read_text(encoding="utf-8"))
+        dados = json.loads(conteudo)
+        return [JobRegistrado(**item) for item in dados["jobs"]]
+    except (ValueError, KeyError, TypeError) as erro:
+        # ValueError: JSON quebrado (JSONDecodeError e ValueError) ou bytes que nao
+        # sao UTF-8; KeyError: falta a chave "jobs"; TypeError: a estrutura nao e a
+        # esperada, ou um job tem campo a mais/a menos (formato de outra versao).
+        # PermissionError e outros OSError NAO entram aqui: sao problema de acesso,
+        # nao de conteudo, e continuam subindo como antes.
+        raise ValueError(
+            f"O registro de jobs '{caminho}' esta ilegivel ou em formato antigo: "
+            f"{type(erro).__name__}: {erro}; apague-o ou corrija-o se nao houver jobs importantes"
+        ) from erro
 
 
 def salvar_registro(jobs: list[JobRegistrado], caminho: Path = CAMINHO_PADRAO) -> None:

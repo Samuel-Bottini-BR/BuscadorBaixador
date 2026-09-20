@@ -39,7 +39,13 @@ def _comando_iniciar(args):
 
 
 def _comando_status(args):
-    jobs = reconciliar_estados(args.registro)
+    # reconciliar_estados levanta ValueError se o registro existe mas esta
+    # ilegivel (JSON quebrado ou de outra versao): a mensagem ja diz qual arquivo
+    try:
+        jobs = reconciliar_estados(args.registro)
+    except ValueError as erro:
+        print(f"Nao deu para mostrar o status: {erro}")
+        return 1
     if not jobs:
         print("Nenhum job no registro ainda.")
         return 0

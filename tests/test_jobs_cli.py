@@ -21,6 +21,20 @@ def test_status_sem_nenhum_job_mostra_mensagem_amigavel(tmp_path, capsys):
     assert "Nenhum job" in capsys.readouterr().out
 
 
+def test_status_com_registro_corrompido_mostra_mensagem_amigavel_em_vez_de_traceback(tmp_path, capsys):
+    caminho_registro = tmp_path / "registro.json"
+    caminho_registro.write_text("{", encoding="utf-8")
+
+    codigo = jobs_cli.main(["--registro", str(caminho_registro), "status"])
+
+    saida = capsys.readouterr().out
+    assert codigo == 1
+    assert "Nao deu para mostrar o status" in saida
+    assert str(caminho_registro) in saida  # diz QUAL arquivo esta ruim
+    assert "Traceback" not in saida
+    assert caminho_registro.read_text(encoding="utf-8") == "{"  # nao apagou nem reescreveu o registro
+
+
 def test_iniciar_e_status_de_ponta_a_ponta(tmp_path, monkeypatch, capsys):
     caminho_registro = tmp_path / "registro.json"
     monkeypatch.setitem(jobs_motor.MODULOS_PERMITIDOS, "cli", "tests.fixtures.job_fake")
