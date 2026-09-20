@@ -26,6 +26,8 @@ from buscador.core.jobs_registro import (
     atualizar_job,
     carregar_registro,
     novo_id,
+    salvar_registro,
+    trava_registro,
 )
 
 RAIZ_PROJETO = Path(__file__).resolve().parent.parent.parent.parent
@@ -136,3 +138,45 @@ def executar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> None:
 
     novo_estado = "concluido" if resultado.returncode == 0 else "erro"
     atualizar_job(id_job, caminho_registro, estado=novo_estado)
+
+
+def pid_esta_vivo(pid: int) -> bool:
+    """Pergunta pro Windows se ainda existe um processo rodando com esse
+    PID. Usa 'tasklist' (comando nativo do Windows) em vez de adicionar
+    uma biblioteca nova so pra isso. PID 0 (ou negativo) nunca conta como
+    vivo: 0 e o "System Idle Process" do Windows, que o tasklist lista."""
+    if pid <= 0:
+        return False
+    resultado = subprocess.run(
+        ["tasklist", "/fi", f"PID eq {pid}", "/nh"],
+        capture_output=True, text=True,
+    )
+    return str(pid) in resultado.stdout
+
+
+def _marcar_interrompido(id_job: str, caminho_registro: Path) -> None:
+    """Marca o job como 'interrompido' -- mas so se, DENTRO da trava do
+    registro, ele ainda constar como 'rodando'. O executor pode ter gravado
+    'concluido' ou 'erro' um instante antes de o processo morrer, e isso nao
+    pode ser sobrescrito."""
+    with trava_registro(caminho_registro):
+        jobs = carregar_registro(caminho_registro)
+        for job in jobs:
+            if job.id == id_job and job.estado == "rodando":
+                job.estado = "interrompido"
+                job.atualizado_em = datetime.now(timezone.utc).isoformat()
+                salvar_registro(jobs, caminho_registro)
+                return
+
+
+def reconciliar_estados(caminho_registro: Path = CAMINHO_PADRAO) -> list[JobRegistrado]:
+    """Confere, pra cada job que o registro ainda acha que esta 'rodando',
+    se o processo continua vivo de verdade. Se nao estiver -- e o proprio
+    executor nao tiver atualizado o estado antes de morrer (ex.: foi morto
+    por fora, ou crashou sem dar tempo de atualizar) -- marca como
+    'interrompido', pra nunca mostrar um job como 'rodando' quando ja
+    morreu. Devolve a lista ja atualizada."""
+    for job in carregar_registro(caminho_registro):
+        if job.estado == "rodando" and not pid_esta_vivo(job.pid):
+            _marcar_interrompido(job.id, caminho_registro)
+    return carregar_registro(caminho_registro)

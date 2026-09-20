@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 # tests/test_jobs_motor.py
+import os
 import subprocess
 import time
 
 import pytest
 
 from buscador.core import jobs_motor
-from buscador.core.jobs_registro import JobRegistrado, carregar_registro, salvar_registro
+from buscador.core.jobs_registro import JobRegistrado, atualizar_job, carregar_registro, salvar_registro
 
 
 def test_executar_job_roda_o_comando_e_marca_concluido_quando_sai_com_sucesso(tmp_path, monkeypatch):
@@ -131,3 +132,64 @@ def test_executar_job_forca_saida_sem_buffer_e_em_utf8(tmp_path, monkeypatch):
 
     assert capturado["env"]["PYTHONUNBUFFERED"] == "1"
     assert capturado["env"]["PYTHONIOENCODING"] == "utf-8"
+
+
+def test_pid_esta_vivo_verdadeiro_pro_proprio_processo_do_teste():
+    assert jobs_motor.pid_esta_vivo(os.getpid()) is True
+
+
+def test_pid_esta_vivo_falso_pra_pid_que_nao_existe():
+    assert jobs_motor.pid_esta_vivo(999999) is False
+
+
+def test_pid_esta_vivo_falso_pra_pid_zero():
+    # pid 0 e o "System Idle Process" do Windows (o tasklist o lista como vivo);
+    # um job cujo lancamento falhou fica com pid=0 e nao pode parecer vivo
+    assert jobs_motor.pid_esta_vivo(0) is False
+
+
+def test_reconciliar_marca_interrompido_quando_processo_no_registro_ja_morreu(tmp_path):
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=999999, estado="rodando",
+        log_path=str(tmp_path / "log.txt"),
+    )
+    salvar_registro([job], caminho_registro)
+
+    jobs = jobs_motor.reconciliar_estados(caminho_registro)
+
+    assert jobs[0].estado == "interrompido"
+    assert carregar_registro(caminho_registro)[0].estado == "interrompido"
+
+
+def test_reconciliar_nao_mexe_em_job_que_continua_vivo(tmp_path):
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=os.getpid(), estado="rodando",
+        log_path=str(tmp_path / "log.txt"),
+    )
+    salvar_registro([job], caminho_registro)
+
+    jobs = jobs_motor.reconciliar_estados(caminho_registro)
+
+    assert jobs[0].estado == "rodando"
+
+
+def test_reconciliar_nao_sobrescreve_estado_final_gravado_durante_a_checagem(tmp_path, monkeypatch):
+    # o executor pode gravar "concluido" um instante antes de o processo morrer;
+    # a reconciliacao nao pode sobrescrever isso com "interrompido"
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=999999, estado="rodando",
+        log_path=str(tmp_path / "log.txt"),
+    )
+    salvar_registro([job], caminho_registro)
+
+    def pid_morto_com_executor_terminando_no_meio(pid):
+        atualizar_job("job-1", caminho_registro, estado="concluido")
+        return False
+    monkeypatch.setattr(jobs_motor, "pid_esta_vivo", pid_morto_com_executor_terminando_no_meio)
+
+    jobs = jobs_motor.reconciliar_estados(caminho_registro)
+
+    assert jobs[0].estado == "concluido"
