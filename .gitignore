@@ -19,3 +19,6 @@ buscador.local.cfg
 # Perfis de Chrome isolados do navegador automatizado (login/sessao) -
 # nunca commitar, sao credenciais de sessao, uma pasta por nome de perfil
 sessoes_navegador/
+
+# Registro e logs do motor de jobs (estado local, nao pertence ao repositorio)
+jobs/
