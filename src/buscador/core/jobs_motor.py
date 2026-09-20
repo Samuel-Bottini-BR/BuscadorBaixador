@@ -140,18 +140,45 @@ def executar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> None:
     atualizar_job(id_job, caminho_registro, estado=novo_estado)
 
 
+TIMEOUT_TASKLIST_SEGUNDOS = 15
+# quanto tempo esperar o tasklist responder. Sem limite, um tasklist travado
+# congelaria o status (e o parar/retomar) pra sempre.
+
+
 def pid_esta_vivo(pid: int) -> bool:
     """Pergunta pro Windows se ainda existe um processo rodando com esse
     PID. Usa 'tasklist' (comando nativo do Windows) em vez de adicionar
     uma biblioteca nova so pra isso. PID 0 (ou negativo) nunca conta como
-    vivo: 0 e o "System Idle Process" do Windows, que o tasklist lista."""
+    vivo: 0 e o "System Idle Process" do Windows, que o tasklist lista.
+
+    NA DUVIDA, ESTA VIVO: se o tasklist nao abre (OSError, ex.: nao achou o
+    programa), estoura o tempo ou sai com codigo de erro, devolve True. Dar um
+    job vivo por morto e o erro caro (o job vira 'interrompido', o 'parar' vira
+    no-op e o 'retomar' lanca um SEGUNDO executor no mesmo checkpoint); dar um
+    morto por vivo so adia a decisao -- o 'parar' resolve depois pela prova de
+    identidade (ver _e_o_executor_do_job). O tasklist sai com codigo 0 tanto
+    quando o PID existe quanto quando nao existe (medido), entao codigo != 0 e
+    mesmo falha da consulta, nao um "nao existe".
+
+    A saida e lida como bytes e decodificada aqui, com errors='replace': o
+    console do Windows usa uma codepage (ex.: cp850) que o Python nao decodifica
+    sozinho (a mensagem "nenhuma tarefa em execucao..." tem acentos, e text=True
+    daria UnicodeDecodeError); a checagem so procura o numero do PID, que e ASCII."""
     if pid <= 0:
         return False
-    resultado = subprocess.run(
-        ["tasklist", "/fi", f"PID eq {pid}", "/nh"],
-        capture_output=True, text=True,
-    )
-    return str(pid) in resultado.stdout
+    try:
+        resultado = subprocess.run(
+            ["tasklist", "/fi", f"PID eq {pid}", "/nh"],
+            capture_output=True, timeout=TIMEOUT_TASKLIST_SEGUNDOS,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            # CREATE_NO_WINDOW: sem isso, o Windows pode abrir uma janelinha de
+            # terminal por um instante quando quem chama nao tem console proprio
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    if resultado.returncode != 0:
+        return True
+    return str(pid) in resultado.stdout.decode("utf-8", errors="replace")
 
 
 TOLERANCIA_LANCAMENTO_SEGUNDOS = 30.0

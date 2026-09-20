@@ -155,6 +155,74 @@ def test_pid_esta_vivo_falso_pra_pid_zero():
     assert jobs_motor.pid_esta_vivo(0) is False
 
 
+def test_pid_esta_vivo_na_duvida_diz_que_esta_vivo_quando_o_tasklist_nao_abre(monkeypatch):
+    # falha segura: se nao da pra perguntar ao Windows, dar o job por MORTO seria
+    # perigoso (o job vira 'interrompido', o 'parar' vira no-op e o 'retomar'
+    # lanca um SEGUNDO executor no mesmo checkpoint); dar por vivo so adia a
+    # decisao -- o 'parar' resolve depois pela prova de identidade
+    def run_que_nao_acha_o_tasklist(*args, **kwargs):
+        raise FileNotFoundError("tasklist")
+    monkeypatch.setattr(jobs_motor.subprocess, "run", run_que_nao_acha_o_tasklist)
+
+    assert jobs_motor.pid_esta_vivo(1234) is True
+
+
+def test_pid_esta_vivo_na_duvida_diz_que_esta_vivo_quando_o_tasklist_estoura_o_tempo(monkeypatch):
+    def run_que_estoura_o_tempo(*args, **kwargs):
+        raise subprocess.TimeoutExpired("tasklist", 15)
+    monkeypatch.setattr(jobs_motor.subprocess, "run", run_que_estoura_o_tempo)
+
+    assert jobs_motor.pid_esta_vivo(1234) is True
+
+
+def test_pid_esta_vivo_na_duvida_diz_que_esta_vivo_quando_o_tasklist_sai_com_erro(monkeypatch):
+    class ResultadoComErro:
+        returncode = 1
+        stdout = b""
+        stderr = b"ERRO: algo deu errado"
+    monkeypatch.setattr(jobs_motor.subprocess, "run", lambda *args, **kwargs: ResultadoComErro())
+
+    assert jobs_motor.pid_esta_vivo(1234) is True
+
+
+def test_pid_esta_vivo_aguenta_bytes_que_o_cp1252_nao_decodifica(monkeypatch):
+    # \x81 e um byte que o cp1252 nao define: decodificar com ele (text=True) daria
+    # UnicodeDecodeError -- e o console do Windows pode usar outra codepage (ex.: cp850).
+    # O resultado segue a regra de sempre: o numero do PID aparece no texto?
+    class ResultadoComPid:
+        returncode = 0
+        stdout = b"python.exe                   1234 Console                    1     45.000 K \x81\r\n"
+        stderr = b""
+    monkeypatch.setattr(jobs_motor.subprocess, "run", lambda *args, **kwargs: ResultadoComPid())
+    assert jobs_motor.pid_esta_vivo(1234) is True
+
+    class ResultadoSemPid:
+        returncode = 0
+        stdout = b"INFORMA\x80\x81ES: nenhuma tarefa em execu\x81\x82o correspondente aos crit\x82rios\r\n"
+        stderr = b""
+    monkeypatch.setattr(jobs_motor.subprocess, "run", lambda *args, **kwargs: ResultadoSemPid())
+    assert jobs_motor.pid_esta_vivo(1234) is False
+
+
+def test_pid_esta_vivo_passa_timeout_e_nao_abre_janela_ao_chamar_o_tasklist(monkeypatch):
+    class ResultadoSemPid:
+        returncode = 0
+        stdout = b""
+        stderr = b""
+    argumentos_recebidos = {}
+
+    def run_falso(*args, **kwargs):
+        argumentos_recebidos.update(kwargs)
+        return ResultadoSemPid()
+    monkeypatch.setattr(jobs_motor.subprocess, "run", run_falso)
+
+    jobs_motor.pid_esta_vivo(1234)
+
+    assert argumentos_recebidos["timeout"] == jobs_motor.TIMEOUT_TASKLIST_SEGUNDOS  # sem limite, um tasklist travado congelaria o status
+    assert argumentos_recebidos["creationflags"] & subprocess.CREATE_NO_WINDOW  # sem piscar janela de terminal
+    assert not argumentos_recebidos.get("text")  # bytes puros, decodificados com errors="replace"
+
+
 def test_reconciliar_marca_interrompido_quando_processo_no_registro_ja_morreu(tmp_path):
     caminho_registro = tmp_path / "registro.json"
     job = JobRegistrado(
