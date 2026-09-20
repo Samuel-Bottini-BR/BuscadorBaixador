@@ -86,6 +86,23 @@ def test_acao_humana_necessaria_mostra_aviso_e_preserva_progresso(tmp_path, monk
     assert str(tmp_path / slug_consulta(CONSULTA)) in saida
 
 
+def test_acao_humana_necessaria_dispara_notificacao_windows(tmp_path, monkeypatch):
+    monkeypatch.setattr(gallica_crawl, "DIRETORIO_COLETAS", tmp_path)
+
+    def coletar_que_precisa_de_login(*args, **kwargs):
+        raise AcaoHumanaNecessaria(TIPO_LOGIN, "precisa logar em tal-site", site="tal-site")
+    monkeypatch.setattr(gallica_crawl, "coletar", coletar_que_precisa_de_login)
+
+    chamadas = []
+    monkeypatch.setattr(gallica_crawl, "avisar_windows", lambda titulo, mensagem: chamadas.append((titulo, mensagem)))
+
+    gallica_crawl.main([CONSULTA])
+
+    assert len(chamadas) == 1
+    titulo, mensagem = chamadas[0]
+    assert "precisa logar em tal-site" in mensagem
+
+
 def test_reiniciar_sem_confirmacao_cancela_e_nao_apaga(tmp_path, monkeypatch):
     monkeypatch.setattr(gallica_crawl, "DIRETORIO_COLETAS", tmp_path)
     diretorio_job = tmp_path / slug_consulta(CONSULTA)

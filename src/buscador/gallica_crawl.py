@@ -16,6 +16,7 @@ from pathlib import Path
 from buscador.core.acao_humana import AcaoHumanaNecessaria, formatar_aviso
 from buscador.core.checkpoint import ConsultaDivergenteError, slug_consulta
 from buscador.core.coleta_gallica import COOLDOWN_429_PADRAO_SEGUNDOS, coletar
+from buscador.core.jobs_notificacoes import avisar_windows
 
 SAIDAS = Path(__file__).resolve().parent.parent.parent / "saidas"
 DIRETORIO_COLETAS = SAIDAS / "gallica_crawl"
@@ -107,9 +108,12 @@ def main(argv=None):
         # sinal especial (ver core/acao_humana.py): precisa que o Samuel
         # faça algo antes de continuar. Como o progresso já está salvo em
         # disco (checkpoint + CSV), não se perde nada -- só avisa onde
-        # está, pra ele rodar o mesmo comando de novo depois de resolver.
-        print(formatar_aviso(erro))
+        # está (e dispara notificação do Windows), pra ele rodar o mesmo
+        # comando de novo depois de resolver.
+        aviso = formatar_aviso(erro)
+        print(aviso)
         print(f"O progresso ja salvo continua em {diretorio_job} -- rode este comando de novo depois de resolver.")
+        avisar_windows("BuscadorBaixador precisa de ajuda", aviso)
         return 1
 
     print(f"Coleta concluída: {checkpoint.itens_gravados} itens salvos em {diretorio_job / 'itens.csv'}")

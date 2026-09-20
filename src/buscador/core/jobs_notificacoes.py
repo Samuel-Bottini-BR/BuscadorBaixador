@@ -6,12 +6,20 @@ precisa de nenhuma configuracao especial nem permissao de administrador.
 """
 import threading
 
-from win11toast import notify
+try:
+    from win11toast import notify
+except Exception:
+    # biblioteca ausente ou incompativel com este Windows: o aviso vira um "nao
+    # faz nada" e o resto do programa (cli, gallica_crawl...) continua funcionando
+    # -- o aviso e so uma cortesia
+    notify = None
 
 ESPERA_MAXIMA_SEGUNDOS = 3.0
 
 
 def _mostrar(titulo: str, mensagem: str) -> None:
+    if notify is None:
+        return
     try:
         notify(titulo, mensagem)
     except Exception:

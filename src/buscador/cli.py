@@ -22,6 +22,7 @@ from buscador.adapters.internet_archive import InternetArchiveAdapter
 from buscador.adapters.phpbb import PhpbbAdapter
 from buscador.core.acao_humana import AcaoHumanaNecessaria, formatar_aviso
 from buscador.core.enriquecimento import enriquecer_item
+from buscador.core.jobs_notificacoes import avisar_windows
 from buscador.core.planilha import gerar_planilha
 
 # Dicionário (dict -- uma "tabela" nome->valor) que liga o domínio de um
@@ -120,9 +121,13 @@ def main(argv=None):
     except AcaoHumanaNecessaria as erro:
         # Sinal especial (ver core/acao_humana.py): o programa precisa que
         # o Samuel faça algo (conseguir uma chave, logar, resolver um
-        # CAPTCHA) antes de continuar. Mostra a instrução e para de forma
-        # limpa -- rodar o comando de novo depois resolve.
-        print(formatar_aviso(erro))
+        # CAPTCHA) antes de continuar. Mostra a instrução, dispara uma
+        # notificação do Windows (pra avisar mesmo sem ninguém olhando o
+        # terminal), e para de forma limpa -- rodar o comando de novo
+        # depois resolve.
+        aviso = formatar_aviso(erro)
+        print(aviso)
+        avisar_windows("BuscadorBaixador precisa de ajuda", aviso)
         return 1
 
     if args.saida:

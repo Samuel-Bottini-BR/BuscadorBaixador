@@ -85,6 +85,19 @@ def test_main_acao_humana_necessaria_mostra_aviso_amigavel(capsys, monkeypatch):
     assert "cadastre-se" in saida
 
 
+def test_main_acao_humana_necessaria_dispara_notificacao_windows(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(cli, "construir_adapter", lambda nome, url: AdapterFakePrecisaChave(url))
+    monkeypatch.setattr(cli, "avisar_windows", lambda titulo, mensagem: chamadas.append((titulo, mensagem)))
+
+    cli.main(["https://grand-sud-medieval.fr/forum/viewtopic.php?f=14&t=1", "--adapter", "phpbb"])
+
+    assert len(chamadas) == 1
+    titulo, mensagem = chamadas[0]
+    assert "tal-site" in mensagem
+    assert "cadastre-se" in mensagem
+
+
 def test_construir_adapter_gallica():
     adapter = cli.construir_adapter("gallica", "Christophori Clavii")
     assert isinstance(adapter, GallicaAdapter)
