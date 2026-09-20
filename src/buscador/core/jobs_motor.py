@@ -13,6 +13,7 @@ import math
 import os
 import subprocess
 import sys
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -55,7 +56,10 @@ def _lancar_destacado(comando: list[str]) -> subprocess.Popen:
     o que faltou na coleta da Gallica que morreu junto com a sessao. Tenta
     primeiro tambem sair do "job object" do Windows de quem lancou
     (CREATE_BREAKAWAY_FROM_JOB); se o Windows negar (o pai nao permite),
-    tenta de novo sem isso."""
+    tenta de novo sem isso -- e AVISA (RuntimeWarning), porque esse plano B
+    perde a garantia: se o pai estiver num job object com KILL_ON_JOB_CLOSE, o
+    executor morre junto quando a sessao fecha (o bug de 17/09), sem ninguem
+    perceber. (Detectar isso de antemao, com IsProcessInJob, fica pra depois.)"""
     argumentos = dict(
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         close_fds=True,
@@ -66,6 +70,11 @@ def _lancar_destacado(comando: list[str]) -> subprocess.Popen:
             **argumentos,
         )
     except OSError:
+        warnings.warn(
+            "Nao consegui desacoplar totalmente este job da sessao que o iniciou; "
+            "se esta janela/sessao fechar, o job pode morrer junto.",
+            RuntimeWarning, stacklevel=2,
+        )
         return subprocess.Popen(comando, creationflags=_FLAGS_DESTACADO, **argumentos)
 
 

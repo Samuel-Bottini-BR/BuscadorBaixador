@@ -90,13 +90,34 @@ def test_lancar_destacado_tenta_de_novo_sem_breakaway_se_o_windows_negar(monkeyp
 
     monkeypatch.setattr(subprocess, "Popen", popen_falso)
 
-    processo = jobs_motor._lancar_destacado(["qualquer"])
+    # o fallback perde a garantia de "sobreviver ao fechamento da sessao": tem que avisar
+    with pytest.warns(RuntimeWarning, match="desacoplar"):
+        processo = jobs_motor._lancar_destacado(["qualquer"])
 
     assert processo.pid == 4242
     assert len(chamadas) == 2
     assert chamadas[0] & subprocess.CREATE_BREAKAWAY_FROM_JOB
     assert not chamadas[1] & subprocess.CREATE_BREAKAWAY_FROM_JOB
     assert chamadas[1] & subprocess.DETACHED_PROCESS
+
+
+def test_lancar_destacado_nao_avisa_nada_quando_o_breakaway_e_aceito(monkeypatch, recwarn):
+    chamadas = []
+
+    class ProcessoFalso:
+        pid = 4242
+
+    def popen_falso(comando, creationflags=0, **kwargs):
+        chamadas.append(creationflags)
+        return ProcessoFalso()
+
+    monkeypatch.setattr(subprocess, "Popen", popen_falso)
+
+    processo = jobs_motor._lancar_destacado(["qualquer"])
+
+    assert processo.pid == 4242
+    assert len(chamadas) == 1  # aceitou de primeira, sem fallback
+    assert len(recwarn) == 0  # e sem nenhum aviso
 
 
 def test_iniciar_job_marca_erro_e_repropaga_se_o_lancamento_falhar(tmp_path, monkeypatch):
