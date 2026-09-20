@@ -377,6 +377,8 @@ git commit -m "feat: notificacao nativa do Windows pro motor de jobs"
 
 ### Task 3: Motor — iniciar e executar um job
 
+> **Emenda (rodada de correção 1 da execução):** a revisão achou dois defeitos no código deste task do jeito escrito abaixo, e o `jobs_motor.py` do repositório foi corrigido: (1) se `_lancar_destacado` falhar, `iniciar_job` marca o job como `"erro"` e re-propaga a exceção (antes sobrava um job `rodando`/`pid=0` fantasma); (2) o ambiente do comando ganhou `PYTHONUNBUFFERED=1` (antes o log ficava preso no buffer até o fim do job). O arquivo de testes ganhou 2 testes (7 no total neste ponto). **O arquivo no repositório é a versão vigente.**
+
 **Files:**
 - Create: `src/buscador/core/jobs_motor.py`
 - Create: `src/buscador/core/jobs_executor.py`
@@ -711,6 +713,12 @@ def test_pid_esta_vivo_falso_pra_pid_que_nao_existe():
     assert jobs_motor.pid_esta_vivo(999999) is False
 
 
+def test_pid_esta_vivo_falso_pra_pid_zero():
+    # pid 0 e o "System Idle Process" do Windows (o tasklist o lista como vivo);
+    # um job cujo lancamento falhou fica com pid=0 e nao pode parecer vivo
+    assert jobs_motor.pid_esta_vivo(0) is False
+
+
 def test_reconciliar_marca_interrompido_quando_processo_no_registro_ja_morreu(tmp_path):
     caminho_registro = tmp_path / "registro.json"
     job = JobRegistrado(
@@ -771,7 +779,10 @@ Expected: `AttributeError: module 'buscador.core.jobs_motor' has no attribute 'p
 def pid_esta_vivo(pid: int) -> bool:
     """Pergunta pro Windows se ainda existe um processo rodando com esse
     PID. Usa 'tasklist' (comando nativo do Windows) em vez de adicionar
-    uma biblioteca nova so pra isso."""
+    uma biblioteca nova so pra isso. PID 0 (ou negativo) nunca conta como
+    vivo: 0 e o "System Idle Process" do Windows, que o tasklist lista."""
+    if pid <= 0:
+        return False
     resultado = subprocess.run(
         ["tasklist", "/fi", f"PID eq {pid}", "/nh"],
         capture_output=True, text=True,
@@ -826,7 +837,7 @@ from buscador.core.jobs_registro import (
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos os testes do arquivo passando (agora 10 no total).
+Expected: todos os testes do arquivo passando (agora 13 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -930,7 +941,7 @@ def parar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegist
 - [ ] **Step 5: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 12 no total).
+Expected: todos passando (agora 15 no total).
 
 - [ ] **Step 6: Commit**
 
@@ -1076,7 +1087,7 @@ def descrever_progresso(job: JobRegistrado) -> str:
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 16 no total).
+Expected: todos passando (agora 19 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -1145,7 +1156,7 @@ def retomar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegi
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 18 no total).
+Expected: todos passando (agora 21 no total).
 
 - [ ] **Step 5: Commit**
 
