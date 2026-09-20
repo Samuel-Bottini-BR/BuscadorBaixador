@@ -340,3 +340,84 @@ def parar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegist
                 "o estado nao mudou."
             )
     return _marcar_parado(id_job, caminho_registro)
+
+
+def _nome_da_pasta_do_job_gallica(argv: list[str]) -> Optional[str]:
+    """Nome da pasta do job da Etapa 1: o valor de --job (ou --job=VALOR), se
+    foi passado; senao, derivado da consulta (primeiro item de argv) -- mesma
+    regra de gallica_crawl.py::_diretorio_do_job."""
+    for posicao, item in enumerate(argv):
+        if item == "--job" and posicao + 1 < len(argv):
+            return argv[posicao + 1]
+        if item.startswith("--job="):
+            return item[len("--job="):]
+    return slug_consulta(argv[0]) if argv else None
+
+
+def _ultima_linha_do_log(caminho: Path) -> Optional[str]:
+    """Ultima linha nao vazia do log, lendo so o final do arquivo (o log de
+    uma coleta longa pode ter dezenas de milhares de linhas, e o status e
+    consultado toda hora)."""
+    if not caminho.exists():
+        return None
+    with open(caminho, "rb") as arquivo:
+        arquivo.seek(0, os.SEEK_END)
+        tamanho = arquivo.tell()
+        arquivo.seek(max(0, tamanho - 4096))
+        final = arquivo.read().decode("utf-8", errors="replace")
+    linhas = [linha for linha in final.splitlines() if linha.strip()]
+    return linhas[-1] if linhas else None
+
+
+def _progresso_gallica_crawl(job: JobRegistrado) -> Optional[str]:
+    """Le o checkpoint da Etapa 1 (coleta SRU da Gallica) pra esse job, se
+    existir. A pasta do checkpoint vem do --job ou, sem ele, da consulta (o
+    primeiro item de argv) -- ver gallica_crawl.py."""
+    nome_da_pasta = _nome_da_pasta_do_job_gallica(job.argv)
+    if not nome_da_pasta:
+        return None
+    caminho = SAIDAS / "gallica_crawl" / nome_da_pasta / "checkpoint.json"
+    if not caminho.exists():
+        return None
+    checkpoint = Checkpoint(**json.loads(caminho.read_text(encoding="utf-8")))
+    if checkpoint.total_registros_api:
+        percentual = 100 * checkpoint.itens_gravados / checkpoint.total_registros_api
+        return f"{checkpoint.itens_gravados}/{checkpoint.total_registros_api} registros ({percentual:.1f}%)"
+    return f"{checkpoint.itens_gravados} registros coletados"
+
+
+def _progresso_gallica_enriquecer(job: JobRegistrado) -> Optional[str]:
+    """Le o checkpoint da Etapa 2 (verificar link + traduzir) pra esse job,
+    se existir. O nome da pasta do job e o primeiro item de argv (ver
+    gallica_enriquecer.py); se o primeiro item for uma opcao (comeca com
+    "-"), nao da pra saber qual e a pasta."""
+    if not job.argv or job.argv[0].startswith("-"):
+        return None
+    caminho = SAIDAS / "gallica_crawl" / job.argv[0] / "checkpoint_enriquecimento.json"
+    if not caminho.exists():
+        return None
+    checkpoint = CheckpointEnriquecimento(**json.loads(caminho.read_text(encoding="utf-8")))
+    total_lotes = math.ceil(checkpoint.total_itens / checkpoint.lote_tamanho) if checkpoint.total_itens else 0
+    return f"lote {checkpoint.proximo_lote}/{total_lotes}"
+
+
+_LEITORES_DE_PROGRESSO = {
+    "gallica_crawl": _progresso_gallica_crawl,
+    "gallica_enriquecer": _progresso_gallica_enriquecer,
+}
+
+
+def descrever_progresso(job: JobRegistrado) -> str:
+    """Devolve uma linha de texto com o progresso do job, do jeito mais
+    informativo possivel: le o checkpoint quando o motor conhece o formato
+    (gallica_crawl, gallica_enriquecer); senao, mostra a ultima linha do
+    log."""
+    leitor = _LEITORES_DE_PROGRESSO.get(job.modulo)
+    if leitor:
+        progresso = leitor(job)
+        if progresso:
+            return progresso
+    ultima_linha = _ultima_linha_do_log(Path(job.log_path))
+    if ultima_linha:
+        return f"log: {ultima_linha}"
+    return "sem informacao de progresso ainda"

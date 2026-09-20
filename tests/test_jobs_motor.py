@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # tests/test_jobs_motor.py
+import json as json_mod
 import os
 import subprocess
 import sys
@@ -9,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from buscador.core import jobs_motor
+from buscador.core.checkpoint import slug_consulta
 from buscador.core.jobs_registro import JobRegistrado, atualizar_job, carregar_registro, salvar_registro
 
 
@@ -468,3 +470,74 @@ def test_linha_de_comando_devolve_none_se_o_wmi_der_erro_mesmo_com_codigo_zero(m
         stderr = b""
     monkeypatch.setattr(jobs_motor.subprocess, "run", lambda *args, **kwargs: ResultadoProcessoInexistente())
     assert jobs_motor._linha_de_comando(1234) == ""
+
+
+def test_descrever_progresso_gallica_crawl_le_o_checkpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    consulta = 'dc.type all "monographie"'
+    pasta_checkpoint = tmp_path / "saidas" / "gallica_crawl" / slug_consulta(consulta)
+    pasta_checkpoint.mkdir(parents=True)
+    (pasta_checkpoint / "checkpoint.json").write_text(json_mod.dumps({
+        "consulta": consulta, "tamanho_pagina": 50, "proximo_start_record": 101,
+        "total_registros_api": 1000, "itens_gravados": 100, "concluido": False,
+        "atualizado_em": "2026-09-17T00:00:00+00:00",
+    }), encoding="utf-8")
+    job = JobRegistrado(id="j1", modulo="gallica_crawl", argv=[consulta], pid=1,
+                         estado="rodando", log_path=str(tmp_path / "log.txt"))
+
+    progresso = jobs_motor.descrever_progresso(job)
+
+    assert "100/1000" in progresso
+    assert "10.0%" in progresso
+
+
+def test_descrever_progresso_gallica_crawl_respeita_a_opcao_job(tmp_path, monkeypatch):
+    # com --job, a pasta do checkpoint tem o nome escolhido, nao o derivado da consulta
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    pasta_checkpoint = tmp_path / "saidas" / "gallica_crawl" / "meu-job"
+    pasta_checkpoint.mkdir(parents=True)
+    (pasta_checkpoint / "checkpoint.json").write_text(json_mod.dumps({
+        "consulta": "qualquer", "tamanho_pagina": 50, "proximo_start_record": 51,
+        "total_registros_api": 200, "itens_gravados": 50, "concluido": False,
+        "atualizado_em": "2026-09-17T00:00:00+00:00",
+    }), encoding="utf-8")
+    for argv in (["qualquer", "--job", "meu-job"], ["qualquer", "--job=meu-job"]):
+        job = JobRegistrado(id="j1", modulo="gallica_crawl", argv=argv, pid=1,
+                             estado="rodando", log_path=str(tmp_path / "log.txt"))
+
+        progresso = jobs_motor.descrever_progresso(job)
+
+        assert "50/200" in progresso
+        assert "25.0%" in progresso
+
+
+def test_descrever_progresso_gallica_enriquecer_le_o_checkpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    pasta_checkpoint = tmp_path / "saidas" / "gallica_crawl" / "meu-job"
+    pasta_checkpoint.mkdir(parents=True)
+    (pasta_checkpoint / "checkpoint_enriquecimento.json").write_text(json_mod.dumps({
+        "total_itens": 100, "lote_tamanho": 20, "proximo_lote": 2,
+        "atualizado_em": "2026-09-17T00:00:00+00:00",
+    }), encoding="utf-8")
+    job = JobRegistrado(id="j1", modulo="gallica_enriquecer", argv=["meu-job"], pid=1,
+                         estado="rodando", log_path=str(tmp_path / "log.txt"))
+
+    assert jobs_motor.descrever_progresso(job) == "lote 2/5"
+
+
+def test_descrever_progresso_usa_log_quando_nao_ha_checkpoint_conhecido(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    caminho_log = tmp_path / "log.txt"
+    caminho_log.write_text("linha 1\nlinha 2 - progresso aqui\n", encoding="utf-8")
+    job = JobRegistrado(id="j1", modulo="cli", argv=[], pid=1, estado="rodando",
+                         log_path=str(caminho_log))
+
+    assert jobs_motor.descrever_progresso(job) == "log: linha 2 - progresso aqui"
+
+
+def test_descrever_progresso_sem_checkpoint_nem_log_avisa_isso(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs_motor, "SAIDAS", tmp_path / "saidas")
+    job = JobRegistrado(id="j1", modulo="cli", argv=[], pid=1, estado="rodando",
+                         log_path=str(tmp_path / "nao-existe.txt"))
+
+    assert jobs_motor.descrever_progresso(job) == "sem informacao de progresso ainda"
