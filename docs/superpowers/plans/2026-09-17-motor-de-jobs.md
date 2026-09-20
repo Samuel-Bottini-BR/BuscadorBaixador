@@ -691,6 +691,8 @@ git commit -m "feat: motor de jobs -- iniciar (destacado) e executar"
 
 ### Task 4: Motor — checar PID vivo e reconciliar estados
 
+> **Emenda (rodada de correção 1 da execução):** a revisão provou que a guarda `pid <= 0 → False` deste task fazia `reconciliar_estados` marcar `interrompido` um job recém-lançado (`rodando`/`pid=0` por alguns ms) pelo resto da execução. O `jobs_motor.py` do repositório ganhou uma tolerância de lançamento (`TOLERANCIA_LANCAMENTO_SEGUNDOS`, `_lancamento_em_andamento`) e um compare-and-set do pid em `_marcar_interrompido(id_job, pid_verificado, caminho_registro)`; o arquivo de testes ganhou 3 testes. **O arquivo no repositório é a versão vigente.**
+
 **Files:**
 - Modify: `src/buscador/core/jobs_motor.py`
 - Test: `tests/test_jobs_motor.py`
@@ -850,13 +852,16 @@ git commit -m "feat: motor de jobs -- checar PID vivo e reconciliar estados"
 
 ### Task 5: Motor — parar um job
 
+> **Por que este task é mais cuidadoso que o rascunho original (decisão de revisão do plano):** parar um job significa matar um processo pelo PID guardado no registro. Se o executor já morreu e o Windows reaproveitou aquele PID para OUTRO programa (do Samuel!), um `taskkill /F` cego mataria o programa errado. Por isso `parar_job` só mata se a linha de comando do processo for mesmo o executor DAQUELE job (contém `jobs_executor` e o id do job), e só age em jobs que o registro diz que estão `rodando`.
+
 **Files:**
 - Modify: `src/buscador/core/jobs_motor.py`
 - Create: `tests/fixtures/job_lento_fake.py`
 - Test: `tests/test_jobs_motor.py`
 
 **Interfaces:**
-- Produces: `parar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado`
+- Consumes: `JobRegistrado`, `carregar_registro`, `atualizar_job`, `CAMINHO_PADRAO`, `pid_esta_vivo` (Tasks 1, 3, 4)
+- Produces: `_linha_de_comando(pid: int) -> str`, `_e_o_executor_do_job(job: JobRegistrado) -> bool`, `parar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado` (levanta `ValueError` se o id não existir; devolve o job sem mudar nada se ele não estava `rodando`; senão devolve o job já `parado`)
 
 - [ ] **Step 1: Criar o fixture "lento" (fica rodando tempo suficiente pra dar pra testar parar de verdade)**
 
@@ -878,25 +883,58 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 2: Escrever o teste**
+- [ ] **Step 2: Escrever os testes**
+
+Acrescentar `import sys` no topo de `tests/test_jobs_motor.py` (junto dos outros imports) e estes testes ao final:
 
 ```python
-# acrescentar em tests/test_jobs_motor.py
-import time
-
-
 def test_parar_job_marca_estado_parado_e_mata_o_processo(tmp_path, monkeypatch):
     caminho_registro = tmp_path / "registro.json"
     monkeypatch.setitem(jobs_motor.MODULOS_PERMITIDOS, "espera_teste", "tests.fixtures.job_lento_fake")
     monkeypatch.setattr(jobs_motor, "PASTA_JOBS", tmp_path / "jobs")
 
     job = jobs_motor.iniciar_job("espera_teste", [], caminho_registro)
-    time.sleep(1)  # da tempo do processo real subir
+    time.sleep(2)  # da tempo do executor (e do comando lento) subirem de verdade
+    assert jobs_motor.pid_esta_vivo(job.pid) is True
 
     parado = jobs_motor.parar_job(job.id, caminho_registro)
 
     assert parado.estado == "parado"
     assert jobs_motor.pid_esta_vivo(job.pid) is False
+
+
+def test_parar_job_nao_mata_processo_que_nao_e_o_executor_do_job(tmp_path):
+    # simula o Windows ter reaproveitado o PID do executor morto para outro programa
+    caminho_registro = tmp_path / "registro.json"
+    intruso = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        job = JobRegistrado(
+            id="job-1", modulo="cli", argv=[], pid=intruso.pid, estado="rodando",
+            log_path=str(tmp_path / "log.txt"),
+        )
+        salvar_registro([job], caminho_registro)
+
+        parado = jobs_motor.parar_job("job-1", caminho_registro)
+
+        assert parado.estado == "parado"
+        assert intruso.poll() is None  # continua vivo: nao era o executor deste job
+    finally:
+        intruso.kill()
+        intruso.wait()
+
+
+def test_parar_job_que_ja_terminou_nao_muda_nada(tmp_path):
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(
+        id="job-1", modulo="cli", argv=[], pid=999999, estado="concluido",
+        log_path=str(tmp_path / "log.txt"),
+    )
+    salvar_registro([job], caminho_registro)
+
+    resultado = jobs_motor.parar_job("job-1", caminho_registro)
+
+    assert resultado.estado == "concluido"
+    assert carregar_registro(caminho_registro)[0].estado == "concluido"
 
 
 def test_parar_job_com_id_inexistente_da_erro(tmp_path):
@@ -907,8 +945,6 @@ def test_parar_job_com_id_inexistente_da_erro(tmp_path):
         jobs_motor.parar_job("nao-existe", caminho_registro)
 ```
 
-Adicionar `import pytest` no topo do arquivo de teste, se ainda não estiver lá.
-
 - [ ] **Step 3: Rodar e confirmar que falham**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v -k parar_job`
@@ -917,37 +953,66 @@ Expected: `AttributeError: module 'buscador.core.jobs_motor' has no attribute 'p
 - [ ] **Step 4: Implementar (acrescentar ao final de `jobs_motor.py`)**
 
 ```python
+def _linha_de_comando(pid: int) -> str:
+    """Devolve a linha de comando do processo com esse PID ('' se ele nao
+    existir ou se a consulta falhar). Usa o PowerShell (que ja vem no Windows
+    10/11) em vez de uma biblioteca nova. O PID e convertido pra inteiro
+    antes de entrar no comando, entao nada digitado pode virar codigo."""
+    resultado = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+         f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
+        capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    return resultado.stdout.strip()
+
+
+def _e_o_executor_do_job(job: JobRegistrado) -> bool:
+    """True so se o processo com o PID do job e mesmo o executor DESTE job
+    (a linha de comando dele contem o modulo executor e o id do job). Protege
+    contra o Windows ter reaproveitado o PID de um executor morto para OUTRO
+    programa: matar esse outro programa seria um desastre. Se a consulta
+    falhar, devolve False -- na duvida, nao mata."""
+    if job.pid <= 0:
+        return False
+    linha = _linha_de_comando(job.pid)
+    return "jobs_executor" in linha and job.id in linha
+
+
 def parar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegistrado:
-    """Mata o processo executor do job (e, com ele, o comando real que
-    esta rodando por baixo, porque e processo-filho) e marca o job como
-    'parado' de proposito -- diferente de 'interrompido' (que quer dizer
-    que morreu sozinho, sem ninguem mandar). O progresso ja salvo em disco
-    (checkpoint) nao e afetado -- rodar 'retomar' depois continua de onde
-    parou."""
+    """Para um job que o registro diz que esta 'rodando': mata o executor (e,
+    com ele, o comando real que roda por baixo, porque e processo-filho) --
+    mas SO se o processo do PID guardado for mesmo o executor deste job -- e
+    marca o job como 'parado' de proposito (diferente de 'interrompido', que
+    e quando morreu sozinho). Um job que ja terminou e devolvido sem mudar
+    nada. O progresso ja salvo em disco (checkpoint) nao e afetado -- rodar
+    'retomar' depois continua de onde parou."""
     jobs = {job.id: job for job in carregar_registro(caminho_registro)}
     job = jobs.get(id_job)
     if job is None:
         raise ValueError(f"Nenhum job encontrado com id '{id_job}'")
+    if job.estado != "rodando":
+        return job
 
-    subprocess.run(
-        ["taskkill", "/PID", str(job.pid), "/T", "/F"],
-        capture_output=True, text=True,
-    )
-    # "/T" mata a arvore inteira (o executor e todo processo-filho dele,
-    # nao so o executor sozinho) -- "/F" forca o encerramento
+    if _e_o_executor_do_job(job):
+        subprocess.run(
+            ["taskkill", "/PID", str(job.pid), "/T", "/F"],
+            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        # "/T" mata a arvore inteira (o executor e todo processo-filho dele,
+        # nao so o executor sozinho) -- "/F" forca o encerramento
     return atualizar_job(id_job, caminho_registro, estado="parado")
 ```
 
 - [ ] **Step 5: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 15 no total).
+Expected: todos passando (agora 21 no total).
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add src/buscador/core/jobs_motor.py tests/fixtures/job_lento_fake.py tests/test_jobs_motor.py
-git commit -m "feat: motor de jobs -- parar um job em andamento"
+git commit -m "feat: motor de jobs -- parar um job em andamento (so mata o executor do proprio job)"
 ```
 
 ---
@@ -1087,7 +1152,7 @@ def descrever_progresso(job: JobRegistrado) -> str:
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 19 no total).
+Expected: todos passando (agora 25 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -1156,7 +1221,7 @@ def retomar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegi
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 21 no total).
+Expected: todos passando (agora 27 no total).
 
 - [ ] **Step 5: Commit**
 
