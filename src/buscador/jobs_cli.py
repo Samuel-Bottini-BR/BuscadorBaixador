@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from buscador.core.jobs_motor import (
+    _ultima_linha_do_log,
     descrever_progresso,
     iniciar_job,
     parar_job,
@@ -17,6 +18,12 @@ from buscador.core.jobs_motor import (
     retomar_job,
 )
 from buscador.core.jobs_registro import CAMINHO_PADRAO
+
+_ESTADOS_QUE_PEDEM_MOTIVO = ("erro", "interrompido", "parado")
+# nesses estados o job nao esta mais andando e o estado sozinho nao diz POR QUE
+# (um job que precisa de acao humana, por exemplo, termina como "erro"; se o
+# aviso do Windows falhou, a palavra "erro" seria o unico sinal). Por isso o
+# status mostra, embaixo do job, a ultima linha do log e onde o log fica.
 
 
 def _comando_iniciar(args):
@@ -42,6 +49,16 @@ def _comando_status(args):
         if progresso:
             linha += f" -- {progresso}"
         print(linha)
+        if job.estado in _ESTADOS_QUE_PEDEM_MOTIVO:
+            try:
+                ultima_linha = _ultima_linha_do_log(Path(job.log_path))
+            except OSError:
+                ultima_linha = None
+                # o log e so uma cortesia de exibicao: um log que nao abre nao
+                # pode derrubar o status de TODOS os jobs
+            if ultima_linha:
+                print(f"    ultima linha do log: {ultima_linha}")
+            print(f"    log completo: {job.log_path}")
     return 0
 
 

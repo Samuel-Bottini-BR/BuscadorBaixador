@@ -5,6 +5,8 @@ import os
 import sys
 import time
 
+import pytest
+
 from buscador import jobs_cli
 from buscador.core import jobs_motor
 from buscador.core.jobs_registro import JobRegistrado, carregar_registro, salvar_registro
@@ -113,6 +115,57 @@ def test_retomar_mostra_mensagem_amigavel_se_o_lancamento_falhar(tmp_path, monke
     assert codigo == 1
     assert "Nao deu para retomar" in capsys.readouterr().out
     assert [j.estado for j in carregar_registro(caminho_registro)] == ["concluido", "erro"]
+
+
+@pytest.mark.parametrize("estado", ["erro", "interrompido", "parado"])
+def test_status_de_job_que_nao_esta_mais_rodando_mostra_a_ultima_linha_do_log_e_o_caminho(tmp_path, capsys, estado):
+    # so a palavra "erro" nao diz POR QUE o job parou (um job que precisa de acao
+    # humana termina assim); a ultima linha do log e o caminho do log dizem
+    caminho_registro = tmp_path / "registro.json"
+    caminho_log = tmp_path / "log.txt"
+    caminho_log.write_text("comecou\nAcao humana necessaria: resolva o captcha\n", encoding="utf-8")
+    job = JobRegistrado(id="j1", modulo="cli", argv=[], pid=999999, estado=estado,
+                         log_path=str(caminho_log))
+    salvar_registro([job], caminho_registro)
+
+    codigo = jobs_cli.main(["--registro", str(caminho_registro), "status"])
+
+    saida = capsys.readouterr().out
+    assert codigo == 0
+    assert f"[{estado}] j1" in saida
+    assert "Acao humana necessaria: resolva o captcha" in saida
+    assert str(caminho_log) in saida
+
+
+def test_status_de_job_com_erro_sem_log_nao_quebra_e_mostra_o_caminho_do_log(tmp_path, capsys):
+    caminho_registro = tmp_path / "registro.json"
+    caminho_log = tmp_path / "pasta-que-nao-existe" / "log.txt"
+    job = JobRegistrado(id="j1", modulo="cli", argv=[], pid=999999, estado="erro",
+                         log_path=str(caminho_log))
+    salvar_registro([job], caminho_registro)
+
+    codigo = jobs_cli.main(["--registro", str(caminho_registro), "status"])
+
+    saida = capsys.readouterr().out
+    assert codigo == 0
+    assert "[erro] j1" in saida
+    assert str(caminho_log) in saida
+
+
+def test_status_de_job_com_erro_e_log_ilegivel_nao_quebra_e_mostra_o_caminho_do_log(tmp_path, capsys):
+    # log_path apontando pra uma pasta: abrir como arquivo dispara OSError, e o
+    # status (que lista TODOS os jobs) nao pode cair por causa de um log ruim
+    caminho_registro = tmp_path / "registro.json"
+    job = JobRegistrado(id="j1", modulo="cli", argv=[], pid=999999, estado="erro",
+                         log_path=str(tmp_path))
+    salvar_registro([job], caminho_registro)
+
+    codigo = jobs_cli.main(["--registro", str(caminho_registro), "status"])
+
+    saida = capsys.readouterr().out
+    assert codigo == 0
+    assert "[erro] j1" in saida
+    assert str(tmp_path) in saida
 
 
 def test_status_nao_quebra_com_caracteres_que_o_console_nao_suporta(tmp_path, monkeypatch):
