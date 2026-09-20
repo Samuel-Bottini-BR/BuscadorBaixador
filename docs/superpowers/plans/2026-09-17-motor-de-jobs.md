@@ -852,6 +852,8 @@ git commit -m "feat: motor de jobs -- checar PID vivo e reconciliar estados"
 
 ### Task 5: Motor — parar um job
 
+> **Emenda (2 rodadas de correção da execução):** a revisão provou que o `parar_job` deste rascunho podia (1) sobrescrever `concluido`/`erro` com `parado` (snapshot → consulta lenta → gravação incondicional), (2) gravar `parado` sem ter parado nada (`taskkill` ignorado; consulta falha tratada como "não é o executor"), e que `_linha_de_comando` quebrava com acentos, sem timeout, e lia erro do WMI (código 0 + stderr) como "processo não existe". O `jobs_motor.py` do repositório é a versão vigente: `_linha_de_comando` devolve `Optional[str]` (None = "não sei"), `_e_o_executor_do_job` devolve `Optional[bool]`, `_marcar_parado` relê sob a trava, e `parar_job` levanta `RuntimeError` (nada morto, estado inalterado) quando o job ainda está sendo lançado, quando não dá pra confirmar o processo, ou quando o `taskkill` falha com o processo vivo. O fixture `job_lento_fake` grava o PID do comando real num arquivo (argv[0]) e o teste E2E verifica que a ÁRVORE morre (`/T`). **O código no repositório é a versão vigente; os blocos abaixo são o rascunho original.**
+
 > **Por que este task é mais cuidadoso que o rascunho original (decisão de revisão do plano):** parar um job significa matar um processo pelo PID guardado no registro. Se o executor já morreu e o Windows reaproveitou aquele PID para OUTRO programa (do Samuel!), um `taskkill /F` cego mataria o programa errado. Por isso `parar_job` só mata se a linha de comando do processo for mesmo o executor DAQUELE job (contém `jobs_executor` e o id do job), e só age em jobs que o registro diz que estão `rodando`.
 
 **Files:**
@@ -1006,7 +1008,7 @@ def parar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegist
 - [ ] **Step 5: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 21 no total).
+Expected: todos passando (agora 28 no total, contando os 8 testes das rodadas de correção da execução).
 
 - [ ] **Step 6: Commit**
 
@@ -1152,7 +1154,7 @@ def descrever_progresso(job: JobRegistrado) -> str:
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 25 no total).
+Expected: todos passando (agora 32 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -1221,7 +1223,7 @@ def retomar_job(id_job: str, caminho_registro: Path = CAMINHO_PADRAO) -> JobRegi
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_motor.py -v`
-Expected: todos passando (agora 27 no total).
+Expected: todos passando (agora 34 no total).
 
 - [ ] **Step 5: Commit**
 
@@ -1294,6 +1296,19 @@ def test_parar_via_cli(tmp_path, capsys):
 
     assert codigo == 0
     assert carregar_registro(caminho_registro)[0].estado == "parado"
+
+
+def test_parar_e_retomar_com_id_inexistente_mostram_mensagem_amigavel(tmp_path, capsys):
+    caminho_registro = tmp_path / "registro.json"
+    salvar_registro([], caminho_registro)
+
+    codigo_parar = jobs_cli.main(["--registro", str(caminho_registro), "parar", "nao-existe"])
+    codigo_retomar = jobs_cli.main(["--registro", str(caminho_registro), "retomar", "nao-existe"])
+
+    saida = capsys.readouterr().out
+    assert codigo_parar == 1 and codigo_retomar == 1
+    assert "Nao deu para parar" in saida
+    assert "Nao deu para retomar" in saida
 ```
 
 - [ ] **Step 2: Rodar e confirmar que falham**
@@ -1345,13 +1360,23 @@ def _comando_status(args):
 
 
 def _comando_parar(args):
-    job = parar_job(args.id, args.registro)
-    print(f"Job '{job.id}' parado.")
+    # parar_job levanta ValueError (id inexistente) ou RuntimeError (nao deu
+    # pra parar com seguranca: nada foi morto e o estado nao mudou)
+    try:
+        job = parar_job(args.id, args.registro)
+    except (ValueError, RuntimeError) as erro:
+        print(f"Nao deu para parar: {erro}")
+        return 1
+    print(f"Job '{job.id}': {job.estado}.")
     return 0
 
 
 def _comando_retomar(args):
-    job = retomar_job(args.id, args.registro)
+    try:
+        job = retomar_job(args.id, args.registro)
+    except ValueError as erro:
+        print(f"Nao deu para retomar: {erro}")
+        return 1
     print(f"Job '{args.id}' retomado como '{job.id}' (pid: {job.pid}).")
     return 0
 
@@ -1395,7 +1420,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Rodar e confirmar que passam**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_jobs_cli.py -v`
-Expected: `3 passed`
+Expected: `4 passed`
 
 - [ ] **Step 5: Commit**
 
