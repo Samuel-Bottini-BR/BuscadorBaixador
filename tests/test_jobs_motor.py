@@ -761,9 +761,15 @@ def test_retomar_job_com_id_inexistente_da_erro(tmp_path):
         jobs_motor.retomar_job("nao-existe", caminho_registro)
 
 
-def test_retomar_job_recusa_se_ja_existe_job_identico_rodando(tmp_path):
+def test_retomar_job_recusa_se_ja_existe_job_identico_rodando(tmp_path, monkeypatch):
+    # isolamento: se a guarda um dia regredir, o retomar_job lancaria um job DE VERDADE.
+    # Com a pasta de jobs em tmp_path e o modulo trocado pelo fake, o pior que acontece
+    # e rodar o job_fake la dentro -- nunca criar jobs/<id>/ no repositorio real nem
+    # rodar 'python -m buscador.cli a b'
+    monkeypatch.setitem(jobs_motor.MODULOS_PERMITIDOS, "echo_teste", "tests.fixtures.job_fake")
+    monkeypatch.setattr(jobs_motor, "PASTA_JOBS", tmp_path / "jobs")
     caminho_registro = tmp_path / "registro.json"
-    base = dict(modulo="cli", argv=["a", "b"], log_path=str(tmp_path / "log.txt"))
+    base = dict(modulo="echo_teste", argv=["a", "b"], log_path=str(tmp_path / "log.txt"))
     parado = JobRegistrado(id="job-parado", pid=0, estado="parado", **base)
     rodando = JobRegistrado(id="job-rodando", pid=os.getpid(), estado="rodando", **base)
     salvar_registro([parado, rodando], caminho_registro)
