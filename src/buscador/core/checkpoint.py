@@ -11,6 +11,7 @@ import hashlib  # cria um "hash" -- um código curto e único calculado a partir
 import json  # formato de arquivo/texto pra guardar dados estruturados (o mesmo usado pra configurações de muitos programas)
 import os
 import re
+import time  # usado só pra esperar um instante entre tentativas de trocar o arquivo (ver "salvar")
 from dataclasses import asdict, dataclass  # dataclass: "caixinha" de dados; asdict: transforma essa caixinha num dicionário comum
 from datetime import datetime, timezone
 from typing import Optional  # "Optional[int]" quer dizer "ou é um número inteiro, ou é None (vazio)"
@@ -76,10 +77,16 @@ def carregar_ou_criar(caminho_json, consulta, tamanho_pagina) -> Checkpoint:
     return checkpoint
 
 
+TENTATIVAS_WINDOWS = 10  # quantas vezes tentar trocar o arquivo quando o Windows nega acesso por um instante
+ESPERA_ENTRE_TENTATIVAS = 0.05  # segundos de espera entre uma tentativa e outra (10 x 0,05 s = meio segundo no total)
+
+
 def salvar(checkpoint: Checkpoint, caminho_json) -> None:
     """Grava em um arquivo temporario e so depois troca pelo definitivo --
     assim, se o programa for morto no meio da gravacao, o checkpoint antigo
-    (ainda valido) nunca fica corrompido."""
+    (ainda valido) nunca fica corrompido. Se o Windows negar a troca porque
+    outro processo esta lendo o checkpoint naquele instante, tenta de novo
+    algumas vezes antes de desistir (levanta PermissionError se todas falharem)."""
     checkpoint.atualizado_em = datetime.now(timezone.utc).isoformat()
     caminho_json.parent.mkdir(parents=True, exist_ok=True)
     caminho_tmp = caminho_json.with_suffix(caminho_json.suffix + ".tmp")
@@ -92,7 +99,21 @@ def salvar(checkpoint: Checkpoint, caminho_json) -> None:
     # "asdict(checkpoint)" transforma a "caixinha" Checkpoint num
     # dicionário comum; "json.dumps" transforma esse dicionário em texto
     # no formato JSON, prontinho pra salvar num arquivo
-    os.replace(caminho_tmp, caminho_json)
     # "os.replace" troca o arquivo definitivo pelo temporário numa
     # operação só, que o sistema operacional garante que não fica pela
-    # metade -- ou troca tudo de uma vez, ou (se der erro) não troca nada
+    # metade -- ou troca tudo de uma vez, ou (se der erro) não troca nada.
+    #
+    # Só que, no Windows, enquanto OUTRO processo tem o arquivo definitivo
+    # aberto (ex.: o comando "status" do motor de jobs lendo o progresso), a
+    # troca falha com PermissionError [WinError 5]. É azar de um instante, não
+    # um erro de verdade -- então tenta de novo algumas vezes antes de desistir,
+    # em vez de derrubar uma coleta que já rodou horas. Mesmo padrão do
+    # "_com_tentativas" de core/jobs_registro.py.
+    for tentativa in range(TENTATIVAS_WINDOWS):
+        try:
+            os.replace(caminho_tmp, caminho_json)
+            break
+        except PermissionError:
+            if tentativa == TENTATIVAS_WINDOWS - 1:
+                raise  # todas as tentativas negadas: não é azar de um instante, deixa o erro subir
+            time.sleep(ESPERA_ENTRE_TENTATIVAS)

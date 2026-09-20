@@ -14,6 +14,7 @@ import csv
 import json
 import math
 import os
+import time  # usado só pra esperar um instante entre tentativas de trocar o arquivo (ver "salvar_checkpoint")
 from dataclasses import asdict, dataclass
 
 from buscador.core.enriquecimento import enriquecer_item
@@ -57,6 +58,10 @@ def carregar_ou_criar_checkpoint(caminho_json, total_itens, lote_tamanho) -> Che
     return checkpoint
 
 
+TENTATIVAS_WINDOWS = 10  # quantas vezes tentar trocar o arquivo quando o Windows nega acesso por um instante
+ESPERA_ENTRE_TENTATIVAS = 0.05  # segundos de espera entre uma tentativa e outra (10 x 0,05 s = meio segundo no total)
+
+
 def salvar_checkpoint(checkpoint: CheckpointEnriquecimento, caminho_json) -> None:
     # Mesma técnica de core/checkpoint.py: salva primeiro num arquivo
     # temporário e só depois troca pelo definitivo, pra nunca deixar um
@@ -64,7 +69,20 @@ def salvar_checkpoint(checkpoint: CheckpointEnriquecimento, caminho_json) -> Non
     caminho_json.parent.mkdir(parents=True, exist_ok=True)
     caminho_tmp = caminho_json.with_suffix(caminho_json.suffix + ".tmp")
     caminho_tmp.write_text(json.dumps(asdict(checkpoint), ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(caminho_tmp, caminho_json)
+    # No Windows, enquanto OUTRO processo tem o checkpoint definitivo aberto (ex.:
+    # o comando "status" do motor de jobs lendo o progresso), o os.replace falha
+    # com PermissionError [WinError 5]. É azar de um instante, não um erro de
+    # verdade -- então tenta de novo algumas vezes antes de desistir, em vez de
+    # derrubar uma coleta que já rodou horas. Mesma técnica (e mesmos números) de
+    # core/checkpoint.py::salvar; padrão do "_com_tentativas" de core/jobs_registro.py.
+    for tentativa in range(TENTATIVAS_WINDOWS):
+        try:
+            os.replace(caminho_tmp, caminho_json)
+            break
+        except PermissionError:
+            if tentativa == TENTATIVAS_WINDOWS - 1:
+                raise  # todas as tentativas negadas: não é azar de um instante, deixa o erro subir
+            time.sleep(ESPERA_ENTRE_TENTATIVAS)
 
 
 def enriquecer_em_lotes(itens, diretorio_job, lote_tamanho=LOTE_TAMANHO_PADRAO,

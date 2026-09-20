@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
 import csv
+import json
+import time
 from unittest.mock import MagicMock
 
+import pytest
 from openpyxl import load_workbook
 
 from buscador.adapters.base import Item
 from buscador.core import enriquecimento_lote as modulo
 from buscador.core.enriquecimento_lote import (
+    CheckpointEnriquecimento,
     carregar_ou_criar_checkpoint,
     enriquecer_em_lotes,
     salvar_checkpoint,
@@ -88,6 +92,50 @@ def test_pre_aquece_traducao_uma_vez_por_idioma_distinto(tmp_path, monkeypatch):
     idiomas_aquecidos = {chamada.kwargs["idioma_origem"] for chamada in traduzir_fake.call_args_list}
     assert idiomas_aquecidos == {"fr", "la"}
     assert traduzir_fake.call_count == 2  # um por idioma distinto, nao um por item
+
+
+def test_salvar_checkpoint_tenta_de_novo_quando_o_windows_nega_o_os_replace_por_um_instante(tmp_path, monkeypatch):
+    # enquanto um leitor (o 'status' lendo o checkpoint) tem o arquivo aberto, o
+    # os.replace do escritor falha com PermissionError [WinError 5] no Windows; sem
+    # tentar de novo, isso mataria a coleta de horas por causa de um instante de azar
+    caminho = tmp_path / "checkpoint_enriquecimento.json"
+    salvar_checkpoint(CheckpointEnriquecimento(total_itens=100, lote_tamanho=20, proximo_lote=1), caminho)
+    replace_original = modulo.os.replace
+    tentativas = []
+
+    def replace_negado_nas_duas_primeiras_vezes(origem, destino):
+        tentativas.append(1)
+        if len(tentativas) <= 2:
+            raise PermissionError("[WinError 5] Acesso negado")
+        return replace_original(origem, destino)
+    monkeypatch.setattr(modulo.os, "replace", replace_negado_nas_duas_primeiras_vezes)
+    esperas = []
+    monkeypatch.setattr(time, "sleep", esperas.append)  # nao espera de verdade, mas registra
+
+    salvar_checkpoint(CheckpointEnriquecimento(total_itens=100, lote_tamanho=20, proximo_lote=2), caminho)
+
+    assert len(tentativas) == 3  # 2 negadas + 1 que funcionou
+    assert len(esperas) == 2  # e esperou um pouco entre as tentativas (nao e um laco ocupado)
+    assert json.loads(caminho.read_text(encoding="utf-8"))["proximo_lote"] == 2
+    assert not caminho.with_suffix(".json.tmp").exists()
+
+
+def test_salvar_checkpoint_relevanta_o_permission_error_se_o_windows_nega_sempre(tmp_path, monkeypatch):
+    caminho = tmp_path / "checkpoint_enriquecimento.json"
+    salvar_checkpoint(CheckpointEnriquecimento(total_itens=100, lote_tamanho=20, proximo_lote=1), caminho)
+    tentativas = []
+
+    def replace_sempre_negado(origem, destino):
+        tentativas.append(1)
+        raise PermissionError("[WinError 5] Acesso negado")
+    monkeypatch.setattr(modulo.os, "replace", replace_sempre_negado)
+    monkeypatch.setattr(time, "sleep", lambda segundos: None)
+
+    with pytest.raises(PermissionError):
+        salvar_checkpoint(CheckpointEnriquecimento(total_itens=100, lote_tamanho=20, proximo_lote=2), caminho)
+
+    assert len(tentativas) == 10  # desiste depois de 10 tentativas, nao antes e nao pra sempre
+    assert json.loads(caminho.read_text(encoding="utf-8"))["proximo_lote"] == 1  # o antigo segue valido
 
 
 def test_lista_vazia_nao_quebra(tmp_path, monkeypatch):
