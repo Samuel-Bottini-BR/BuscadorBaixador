@@ -60,13 +60,34 @@ class CheckpointBackfill:
 
 
 def carregar_ou_criar_checkpoint(caminho_json, total_arks, tamanho_lote) -> CheckpointBackfill:
-    """Se já existe um checkpoint salvo nesse caminho, retoma dele (sem
-    conferir se total_arks/tamanho_lote mudaram -- mesmo padrão simples de
-    core/enriquecimento_lote.py::carregar_ou_criar_checkpoint). Se não
-    existe, cria um novo do zero (começando no lote 0)."""
+    """Se já existe um checkpoint salvo nesse caminho, retoma dele -- MAS só
+    se a chamada atual pedir os MESMOS total_arks/tamanho_lote que o
+    checkpoint salvo tem gravados. Isso importa porque, diferente de uma
+    consulta CQL (que ou é a mesma string ou não é), aqui "proximo_lote" é
+    só um número de deslocamento (offset) dentro de uma LISTA de ark ids --
+    se essa lista for regerada com tamanho diferente (ex.: a tarefa A4
+    rodar de novo e mudar arks_faltantes.json) e o backfill for chamado de
+    novo apontando pro MESMO diretorio_job sem limpar o checkpoint antigo,
+    retomar silenciosamente aplicaria esse offset (calculado pra lista
+    ANTIGA) na lista NOVA -- pulando um pedaço inteiro dela sem erro
+    nenhum, e o job ainda terminaria com concluido=True. Levanta ValueError
+    em vez disso (mesma intenção protetora de
+    core/checkpoint.py::ConsultaDivergenteError, mas sem replicar a classe
+    de erro específica dele -- aqui um ValueError simples com uma mensagem
+    clara já basta). Se não existe checkpoint salvo ainda, cria um novo do
+    zero (começando no lote 0)."""
     if caminho_json.exists():
         dados = json.loads(caminho_json.read_text(encoding="utf-8"))
-        return CheckpointBackfill(**dados)
+        checkpoint = CheckpointBackfill(**dados)
+        if checkpoint.total_arks != total_arks or checkpoint.tamanho_lote != tamanho_lote:
+            raise ValueError(
+                f"O checkpoint em '{caminho_json}' foi salvo para total_arks="
+                f"{checkpoint.total_arks}, tamanho_lote={checkpoint.tamanho_lote}, mas agora "
+                f"foi pedido total_arks={total_arks}, tamanho_lote={tamanho_lote}. Retomar "
+                "silenciosamente arriscaria pular ou reprocessar ark ids errados -- use outro "
+                "diretorio_job ou apague o checkpoint antigo antes de continuar."
+            )
+        return checkpoint
     checkpoint = CheckpointBackfill(total_arks=total_arks, tamanho_lote=tamanho_lote)
     salvar_checkpoint(checkpoint, caminho_json)
     return checkpoint

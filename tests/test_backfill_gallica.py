@@ -289,6 +289,66 @@ def test_backfill_de_novo_apos_concluido_nao_faz_nenhuma_chamada(tmp_path):
     cliente_que_nao_deveria_ser_chamado.get.assert_not_called()
 
 
+def test_carregar_ou_criar_checkpoint_total_arks_divergente_levanta_erro_claro(tmp_path):
+    """Regressao de review (fix round 1): se a lista de ark ids for
+    regerada com tamanho diferente (ex.: a tarefa A4 rodar de novo) e o
+    backfill for chamado de novo apontando pro MESMO diretorio_job sem
+    limpar o checkpoint antigo, retomar silenciosamente aplicaria um
+    proximo_lote calculado pra lista ANTIGA na lista NOVA -- pulando um
+    pedaco inteiro dela sem erro nenhum. Tem que falhar alto, nao
+    continuar por engano."""
+    caminho_checkpoint = tmp_path / "checkpoint_backfill.json"
+    carregar_ou_criar_checkpoint(caminho_checkpoint, total_arks=10, tamanho_lote=5)
+
+    with pytest.raises(ValueError) as excinfo:
+        carregar_ou_criar_checkpoint(caminho_checkpoint, total_arks=20, tamanho_lote=5)
+
+    mensagem = str(excinfo.value)
+    assert "10" in mensagem  # valor antigo (salvo)
+    assert "20" in mensagem  # valor novo (pedido agora)
+
+
+def test_carregar_ou_criar_checkpoint_tamanho_lote_divergente_levanta_erro_claro(tmp_path):
+    caminho_checkpoint = tmp_path / "checkpoint_backfill.json"
+    carregar_ou_criar_checkpoint(caminho_checkpoint, total_arks=10, tamanho_lote=5)
+
+    with pytest.raises(ValueError) as excinfo:
+        carregar_ou_criar_checkpoint(caminho_checkpoint, total_arks=10, tamanho_lote=7)
+
+    mensagem = str(excinfo.value)
+    assert "5" in mensagem
+    assert "7" in mensagem
+
+
+def test_carregar_ou_criar_checkpoint_valores_iguais_nao_levanta_erro(tmp_path):
+    caminho_checkpoint = tmp_path / "checkpoint_backfill.json"
+    carregar_ou_criar_checkpoint(caminho_checkpoint, total_arks=10, tamanho_lote=5)
+
+    checkpoint_retomado = carregar_ou_criar_checkpoint(caminho_checkpoint, total_arks=10, tamanho_lote=5)
+
+    assert checkpoint_retomado.total_arks == 10
+    assert checkpoint_retomado.tamanho_lote == 5
+
+
+def test_backfill_com_lista_de_ark_ids_redimensionada_levanta_erro_em_vez_de_pular_lote(tmp_path):
+    """Cenario concreto do review: roda o backfill inteiro com 2 ark ids,
+    depois chama backfill de novo no MESMO diretorio_job com uma lista
+    MAIOR (ex.: a A4 regerou arks_faltantes.json) -- tem que falhar alto em
+    vez de silenciosamente reaproveitar um checkpoint que nao corresponde
+    mais a essa lista."""
+    diretorio_job = tmp_path / "job"
+    ark_ids_originais = ["ark1", "ark2"]
+    cliente = _cliente_com_respostas(_resposta_com_arks(ark_ids_originais))
+    backfill(ark_ids_originais, diretorio_job, tamanho_lote=2, cliente=cliente)
+
+    ark_ids_redimensionados = ["ark1", "ark2", "ark3", "ark4"]
+    cliente_novo = MagicMock()
+    with pytest.raises(ValueError):
+        backfill(ark_ids_redimensionados, diretorio_job, tamanho_lote=2, cliente=cliente_novo)
+
+    cliente_novo.get.assert_not_called()  # falhou antes de fazer qualquer chamada de rede
+
+
 def test_progresso_fct_e_chamado_uma_vez_por_lote(tmp_path):
     diretorio_job = tmp_path / "job"
     ark_ids = ["ark1", "ark2", "ark3"]
