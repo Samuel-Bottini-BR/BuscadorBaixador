@@ -82,3 +82,33 @@ def test_carregar_itens_csv_descarta_link_repetido_mantendo_o_primeiro(tmp_path)
     itens = carregar_itens_csv(caminho)
     assert len(itens) == 2
     assert itens[0].titulo_original == "Algebra Christophori Clavii"
+
+
+def test_carregar_itens_csv_com_campo_muito_longo(tmp_path):
+    """Confirma que carregar_itens_csv nao levanta _csv.Error ao ler um CSV
+    com campo de ~200.000 caracteres. Isso valida a correcao do bug onde o
+    limite padrao (131.072) causava erro ao carregar CSVs com campos grandes."""
+    caminho = tmp_path / "itens.csv"
+    # Criar um item com campo "explicacao" de ~200.000 caracteres
+    explicacao_longa = "x" * 200_000
+    item_com_campo_grande = Item(
+        titulo_original="Livro com explicacao muito longa",
+        link="https://gallica.bnf.fr/ark:/12148/campo-grande",
+        autor="Autor Teste",
+        ano="2024",
+        explicacao=explicacao_longa,
+        fonte="Bibliothèque nationale de France",
+        provedor="Gallica (BnF)",
+        dominio_publico="Sim",
+        url_pagina="https://gallica.bnf.fr/ark:/12148/campo-grande",
+        extra={"idioma_origem": "pt", "tipo_doc": "monographie"},
+    )
+
+    # Escrever o item no CSV
+    with EscritorCsvIncremental(caminho) as escritor:
+        escritor.escrever_pagina([item_com_campo_grande])
+
+    # Carregar deve funcionar sem levantar _csv.Error
+    itens = carregar_itens_csv(caminho)
+    assert len(itens) == 1
+    assert itens[0].explicacao == explicacao_longa

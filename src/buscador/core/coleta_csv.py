@@ -14,6 +14,12 @@ import os
 
 from buscador.adapters.base import Item
 
+# Aumentar o limite de tamanho de campo CSV: um campo "explicacao" real na
+# coleta da Gallica tinha 171.499 caracteres, explodindo o padrão de 131.072.
+# O uso de sys.maxsize causa OverflowError no Windows (inteiro C é 32-bit mesmo
+# em sistema 64-bit), então usamos 10 milhões, que cobre o caso real com folga.
+csv.field_size_limit(10_000_000)
+
 # Nomes das colunas do CSV, na ordem em que vão ser escritas.
 COLUNAS = [
     "titulo_original", "link", "autor", "ano", "explicacao", "fonte",
