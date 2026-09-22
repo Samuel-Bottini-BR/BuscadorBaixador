@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -100,7 +100,14 @@ def test_baixar_via_navegador_levanta_erro_quando_download_nao_termina(tmp_path)
     # que não passa no desafio anti-robô da Gallica) e escondida=True por
     # padrão (Tarefa C-nav7 -- ver core/navegador.py pra explicação completa).
     abrir_mock.assert_called_once_with("gallica", headless=False, external_pdf=True, escondida=True)
-    driver_falso.get.assert_called_once_with("https://gallica.bnf.fr/ark:/12148/bpt6k6382082m.pdf")
+    # visita a página-base ANTES do .pdf (ver test dedicado abaixo pra o
+    # porquê -- achado da Tarefa C-nav8: pular direto pro .pdf sem passar
+    # pela página-base antes só funciona se o perfil já tiver uma sessão
+    # do desafio Altcha resolvida de uma execução recente).
+    assert driver_falso.get.call_args_list == [
+        call("https://gallica.bnf.fr/ark:/12148/bpt6k6382082m"),
+        call("https://gallica.bnf.fr/ark:/12148/bpt6k6382082m.pdf"),
+    ]
     # o navegador tem que ser fechado mesmo quando o download falha (finally)
     driver_falso.quit.assert_called_once()
 
@@ -148,6 +155,40 @@ def test_baixar_via_navegador_configura_pasta_de_download_via_cdp_e_devolve_arqu
         {"behavior": "allow", "downloadPath": str(tmp_path)},
     )
     driver_falso.quit.assert_called_once()
+
+
+def test_baixar_via_navegador_visita_pagina_base_antes_do_pdf(tmp_path):
+    # Achado ao vivo da Tarefa C-nav8: ir DIRETO pro link ".pdf" como
+    # primeira navegação de uma sessão de navegador não funciona de forma
+    # confiável (a Gallica não serve o arquivo -- a hipótese mais provável
+    # é que o desafio Altcha da página-base precisa rodar e resolver
+    # antes). Confirmado ao vivo duas vezes: direto pro .pdf a partir de
+    # uma aba nova nunca navega; visitando a página-base primeiro, o
+    # download completa normalmente. Por isso a função sempre visita a
+    # página-base antes do .pdf, replicando o que um usuário real faria
+    # (abrir a página do livro, depois baixar) -- ver relatório completo
+    # em .superpowers/sdd/vamos-colocar-essas-coisas-federated-cherny/
+    # task-Cnav8-report.md.
+    cliente_falso = MagicMock()
+    cliente_falso.get.return_value = _resposta_json(
+        {"downoaldurl": "https://gallica.bnf.fr/ark:/12148/bpt6k6382082m"}
+    )
+    driver_falso = MagicMock()
+
+    def get_falso(url):
+        (tmp_path / "bpt6k6382082m.pdf").write_bytes(b"%PDF-1.4 conteudo falso")
+
+    driver_falso.get.side_effect = get_falso
+
+    with patch(
+        "buscador.core.download_gallica_navegador.abrir_navegador", return_value=driver_falso
+    ), patch("buscador.core.download_gallica_navegador.ClienteEducado", return_value=cliente_falso):
+        baixar_via_navegador("bpt6k6382082m", tmp_path, timeout_segundos=2.0)
+
+    assert driver_falso.get.call_args_list == [
+        call("https://gallica.bnf.fr/ark:/12148/bpt6k6382082m"),
+        call("https://gallica.bnf.fr/ark:/12148/bpt6k6382082m.pdf"),
+    ]
 
 
 def test_baixar_via_navegador_escondida_false_repassa_pro_abrir_navegador(tmp_path):

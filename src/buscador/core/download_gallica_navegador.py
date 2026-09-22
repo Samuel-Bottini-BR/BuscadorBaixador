@@ -52,6 +52,33 @@ está documentada na docstring do parâmetro `escondida` em
 fontes de verdade divergentes. A confirmação final ao vivo dessa
 combinação contra a Gallica real ainda está pendente (ver relatório da
 C-nav7) -- a Gallica estava com rate-limit ativo no dia dessa tarefa.
+
+## Atualização (Tarefa C-nav8): visita a página-base antes do ".pdf"
+
+A confirmação final ao vivo (pendente da C-nav7) revelou um problema real:
+navegar DIRETO pro link ".pdf" como primeira navegação de uma sessão de
+navegador não funciona de forma confiável -- em 3 tentativas ao vivo (2
+com `escondida=True`, 1 de controle com `escondida=False`, o modo já
+confirmado funcionando antes), nenhum PDF chegou a disco, mesmo com
+timeout generoso (180s). Investigação com screenshots mostrou a causa:
+`driver.get(url_pdf)` chamado como primeira navegação simplesmente não
+navega (a aba fica parada em `chrome://new-tab-page/`indefinidamente,
+sem erro nenhum do Selenium). Navegando primeiro pra `<url-base>` (a
+página HTML do documento -- onde o desafio Altcha roda e resolve) e SÓ
+DEPOIS pro `.pdf`, o download funciona normalmente -- confirmado ao vivo
+2 vezes, incluindo replicando exatamente o cenário de produção
+(`escondida=True` + CDP redirecionando pra pasta customizada): PDF de
+28.543.823 bytes, 69,2s. As tarefas anteriores (C-nav1/C-nav2, que
+testaram só `driver.get(url_pdf)` direto e funcionaram) rodaram sobre o
+mesmo perfil persistente (`sessoes_navegador/gallica/`) já usado em
+tarefas anteriores no mesmo dia -- provavelmente um cookie/token do
+desafio já resolvido sobreviveu de execuções anteriores, mascarando essa
+fragilidade até a C-nav8 rodar com uma sessão "fria". Por isso
+`baixar_via_navegador` agora SEMPRE visita `<url-base>` antes do `.pdf` --
+replica exatamente o que um usuário real faria (abrir a página do livro,
+depois baixar), sem nenhum disfarce, e remove a dependência frágil de
+sessão anterior. Relatório completo:
+`.superpowers/sdd/vamos-colocar-essas-coisas-federated-cherny/task-Cnav8-report.md`.
 """
 import time
 from pathlib import Path
@@ -172,9 +199,14 @@ def baixar_via_navegador(
     3. Configura, via CDP, esse Chrome pra salvar downloads em
        pasta_destino (ver docstring do módulo -- Driver() não tem
        parâmetro pra isso).
-    4. Navega até `<url-base>.pdf` (o padrão que a Tarefa C1 confirmou
-       bloqueado por HTTP simples).
-    5. Espera um arquivo novo aparecer em pasta_destino (polling).
+    4. Navega até `<url-base>` primeiro (a página HTML do documento, não o
+       ".pdf" ainda) -- achado da Tarefa C-nav8: pular direto pro ".pdf"
+       não funciona de forma confiável (ver docstring do módulo, seção
+       "Atualização (Tarefa C-nav8)").
+    5. Navega até `<url-base>.pdf` (o padrão que a Tarefa C1 confirmou
+       bloqueado por HTTP simples, mas que um navegador de verdade
+       consegue seguir depois do passo 4).
+    6. Espera um arquivo novo aparecer em pasta_destino (polling).
 
     Por que SEMPRE headless=False (janela real) e NUNCA headless=True: a
     Tarefa C-nav2/C-nav5 confirmaram ao vivo que `headless=True` NÃO
@@ -228,6 +260,19 @@ def baixar_via_navegador(
             "Page.setDownloadBehavior",
             {"behavior": "allow", "downloadPath": str(pasta_destino)},
         )
+        # Visita a página-base do documento ANTES do link ".pdf" -- achado
+        # ao vivo da Tarefa C-nav8: ir direto pro ".pdf" como primeira
+        # navegação de uma sessão de navegador não funciona de forma
+        # confiável (a hipótese mais provável é que o desafio Altcha da
+        # página-base precisa rodar e resolver antes de o atalho ".pdf"
+        # servir o arquivo direto). Sem este passo, funcionava só quando o
+        # perfil já tinha uma sessão do desafio resolvida de uma execução
+        # recente -- frágil pra uma coleta de verdade contra arks
+        # diferentes. Replica exatamente o que um usuário real faria (abrir
+        # a página do livro, depois baixar) -- ver relatório completo em
+        # .superpowers/sdd/vamos-colocar-essas-coisas-federated-cherny/
+        # task-Cnav8-report.md.
+        driver.get(url_base)
         driver.get(url_pdf)
         return esperar_novo_arquivo(pasta_destino, arquivos_antes, timeout_segundos=timeout_segundos)
     finally:
