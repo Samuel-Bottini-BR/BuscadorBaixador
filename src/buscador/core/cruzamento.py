@@ -135,7 +135,9 @@ def colapsar_por_chave(
     for registro in registros:
         chave = extrair_chave(registro)
         if chave is None:
-            saida.append(registro)
+            # copia -- não devolve o mesmo objeto dict que o chamador passou
+            # (ver docstring do módulo: a função sempre devolve dicts novos)
+            saida.append(dict(registro))
             sem_chave += 1
             continue
         if chave not in grupos:
@@ -149,7 +151,9 @@ def colapsar_por_chave(
         if len(linhas_do_grupo) > 1:
             grupos_colapsados += 1
         representante = escolher(linhas_do_grupo) if escolher else linhas_do_grupo[0]
-        saida[posicao_do_grupo[chave]] = representante
+        # copia -- idem: nunca devolve o dict original do grupo, senão quem
+        # chama poderia mutar o retorno e corromper a lista de entrada.
+        saida[posicao_do_grupo[chave]] = dict(representante)
 
     relatorio = RelatorioColapso(
         total_entrada=len(registros),
@@ -183,6 +187,8 @@ def remover_duplicatas_exatas(registros: list[dict]) -> tuple[list[dict], int]:
             removidos += 1
             continue
         vistos.add(impressao)
-        saida.append(registro)
+        # copia -- não devolve o mesmo objeto dict que o chamador passou (ver
+        # docstring do módulo: a função sempre devolve dicts novos)
+        saida.append(dict(registro))
 
     return saida, removidos

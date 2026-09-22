@@ -132,6 +132,31 @@ def test_colapsar_passa_direto_linhas_sem_chave():
     assert relatorio.sem_chave == 2
 
 
+def test_colapsar_devolve_copia_do_representante_nao_o_dict_original():
+    # Regressão: mutar uma linha devolvida por colapsar_por_chave não pode
+    # corromper a lista de entrada do chamador -- o representante de um
+    # grupo (>1 linha) tem que ser uma cópia, não o mesmo objeto dict.
+    registros = [
+        {"link": "http://a", "titulo": "V1"},
+        {"link": "http://a", "titulo": "V2"},
+    ]
+
+    resultado, _ = colapsar_por_chave(registros, _chave_por_link)
+    resultado[0]["titulo"] = "MUTADO"
+
+    assert registros[0]["titulo"] == "V1"
+
+
+def test_colapsar_devolve_copia_de_linha_sem_chave_nao_o_dict_original():
+    # Mesma regressão, mas pelo caminho "passa direto" (linha sem chave).
+    registros = [{"link": None, "titulo": "original"}]
+
+    resultado, _ = colapsar_por_chave(registros, _chave_por_link)
+    resultado[0]["titulo"] = "MUTADO"
+
+    assert registros[0]["titulo"] == "original"
+
+
 # ---------------------------------------------------------------------------
 # remover_duplicatas_exatas
 # ---------------------------------------------------------------------------
@@ -159,3 +184,15 @@ def test_remover_duplicatas_exatas_mantem_linhas_parecidas_mas_diferentes():
 
     assert resultado == registros
     assert quantidade_removida == 0
+
+
+def test_remover_duplicatas_exatas_devolve_copias_nao_os_dicts_originais():
+    # Regressão: mutar uma linha devolvida não pode corromper a lista de
+    # entrada do chamador -- remover_duplicatas_exatas tem que devolver
+    # dicts novos, mesmo para linhas que sobreviveram sem alteração.
+    registros = [{"link": "http://a", "titulo": "original"}]
+
+    resultado, _ = remover_duplicatas_exatas(registros)
+    resultado[0]["titulo"] = "MUTADO"
+
+    assert registros[0]["titulo"] == "original"
