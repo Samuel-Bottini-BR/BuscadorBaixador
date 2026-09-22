@@ -39,6 +39,19 @@ mesmo comando internamente, ver `core/browser_launcher.py`). Isso não é
 disfarce de automação nenhum -- é o equivalente a escolher "salvar em" numa
 caixa de diálogo de download; não muda em nada como o navegador se
 apresenta pro site nem como ele resolve o desafio Altcha.
+
+## Atualização (Tarefa C-nav7): janela escondida por padrão
+
+`baixar_via_navegador` passou a chamar `abrir_navegador(..., escondida=True)`
+por padrão (em vez de repassar um `headless` que a C-nav2/C-nav5 já
+provaram ao vivo que não funciona contra o Altcha). A razão completa
+(por que janela real, por que "escondida" em vez de headless, e as duas
+peças técnicas que fazem "escondida" funcionar sem travar o download)
+está documentada na docstring do parâmetro `escondida` em
+`core/navegador.py` -- não repetida aqui de propósito, pra não ter duas
+fontes de verdade divergentes. A confirmação final ao vivo dessa
+combinação contra a Gallica real ainda está pendente (ver relatório da
+C-nav7) -- a Gallica estava com rate-limit ativo no dia dessa tarefa.
 """
 import time
 from pathlib import Path
@@ -144,7 +157,7 @@ def baixar_via_navegador(
     ark_id: str,
     pasta_destino: Path,
     indice_pagina: int = 1,
-    headless: bool = True,
+    escondida: bool = True,
     timeout_segundos: float = TIMEOUT_PADRAO_SEGUNDOS,
 ) -> Path:
     """Tenta baixar o PDF de uma página de uma obra da Gallica usando um
@@ -163,12 +176,25 @@ def baixar_via_navegador(
        bloqueado por HTTP simples).
     5. Espera um arquivo novo aparecer em pasta_destino (polling).
 
+    Por que SEMPRE headless=False (janela real) e NUNCA headless=True: a
+    Tarefa C-nav2/C-nav5 confirmaram ao vivo que `headless=True` NÃO
+    consegue passar pelo desafio anti-robô da Gallica (Altcha) -- o
+    download nunca termina, timeout sempre estoura. Uma janela real
+    (headless=False) é a única forma que já funcionou (C-nav1/C-nav2). O
+    parâmetro `escondida` (ver abrir_navegador em core/navegador.py, que
+    documenta a técnica completa e por que ela foi necessária) é o que
+    torna essa janela real invisível pro Samuel no dia a dia, sem recair
+    de volta no problema que headless=True tinha.
+
     Args:
         ark_id: identificador canônico da obra (ex.: "bpt6k6382082m").
         pasta_destino: pasta onde o PDF deve ser salvo (é criada se não existir).
         indice_pagina: número da página dentro da obra (1 = primeira).
-        headless: False abre a janela do Chrome visível (pra observar o
-            que acontece de verdade); True roda invisível.
+        escondida: True (default, comportamento de produção) esconde a
+            janela real do Chrome (fora da tela + flag anti-throttling --
+            ver abrir_navegador). False abre a janela visível de verdade
+            -- útil só pra depuração manual, pra observar o que está
+            acontecendo na tela; não é o modo usado numa coleta normal.
         timeout_segundos: quanto tempo esperar o download terminar antes
             de desistir e levantar erro.
 
@@ -188,7 +214,11 @@ def baixar_via_navegador(
 
     arquivos_antes = _listar_arquivos(pasta_destino)
 
-    driver = abrir_navegador("gallica", headless=headless, external_pdf=True)
+    # headless=False sempre (ver docstring acima -- headless=True já
+    # provado que não funciona contra o Altcha da Gallica). escondida
+    # repassa pra abrir_navegador a decisão de esconder essa janela real
+    # (produção) ou deixá-la visível (depuração manual).
+    driver = abrir_navegador("gallica", headless=False, external_pdf=True, escondida=escondida)
     try:
         # Redireciona onde ESSE navegador salva downloads -- ver docstring
         # do módulo sobre por que isso é feito via CDP e não por parâmetro

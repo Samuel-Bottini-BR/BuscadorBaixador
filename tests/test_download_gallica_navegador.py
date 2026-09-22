@@ -94,11 +94,12 @@ def test_baixar_via_navegador_levanta_erro_quando_download_nao_termina(tmp_path)
             # timeout minúsculo de propósito -- nenhum arquivo vai aparecer
             # na pasta (driver.get é mockado, não baixa nada de verdade),
             # então o polling estoura rápido sem precisar mockar time.sleep.
-            baixar_via_navegador(
-                "bpt6k6382082m", tmp_path, headless=True, timeout_segundos=0.05
-            )
+            baixar_via_navegador("bpt6k6382082m", tmp_path, timeout_segundos=0.05)
 
-    abrir_mock.assert_called_once_with("gallica", headless=True, external_pdf=True)
+    # headless=False sempre (headless=True já provado, em C-nav2/C-nav5,
+    # que não passa no desafio anti-robô da Gallica) e escondida=True por
+    # padrão (Tarefa C-nav7 -- ver core/navegador.py pra explicação completa).
+    abrir_mock.assert_called_once_with("gallica", headless=False, external_pdf=True, escondida=True)
     driver_falso.get.assert_called_once_with("https://gallica.bnf.fr/ark:/12148/bpt6k6382082m.pdf")
     # o navegador tem que ser fechado mesmo quando o download falha (finally)
     driver_falso.quit.assert_called_once()
@@ -116,7 +117,7 @@ def test_baixar_via_navegador_fecha_navegador_mesmo_se_driver_get_falhar(tmp_pat
         "buscador.core.download_gallica_navegador.abrir_navegador", return_value=driver_falso
     ), patch("buscador.core.download_gallica_navegador.ClienteEducado", return_value=cliente_falso):
         with pytest.raises(RuntimeError):
-            baixar_via_navegador("bpt6k6382082m", tmp_path, headless=True, timeout_segundos=0.05)
+            baixar_via_navegador("bpt6k6382082m", tmp_path, timeout_segundos=0.05)
 
     driver_falso.quit.assert_called_once()
 
@@ -139,7 +140,7 @@ def test_baixar_via_navegador_configura_pasta_de_download_via_cdp_e_devolve_arqu
     with patch(
         "buscador.core.download_gallica_navegador.abrir_navegador", return_value=driver_falso
     ), patch("buscador.core.download_gallica_navegador.ClienteEducado", return_value=cliente_falso):
-        resultado = baixar_via_navegador("bpt6k6382082m", tmp_path, headless=False, timeout_segundos=2.0)
+        resultado = baixar_via_navegador("bpt6k6382082m", tmp_path, timeout_segundos=2.0)
 
     assert resultado == tmp_path / "bpt6k6382082m.pdf"
     driver_falso.execute_cdp_cmd.assert_called_once_with(
@@ -147,3 +148,24 @@ def test_baixar_via_navegador_configura_pasta_de_download_via_cdp_e_devolve_arqu
         {"behavior": "allow", "downloadPath": str(tmp_path)},
     )
     driver_falso.quit.assert_called_once()
+
+
+def test_baixar_via_navegador_escondida_false_repassa_pro_abrir_navegador(tmp_path):
+    # escondida=False é a via de depuração manual (janela real visível) --
+    # ver docstring de baixar_via_navegador. Confirma que o parâmetro
+    # realmente chega até abrir_navegador em vez de ser ignorado.
+    driver_falso = MagicMock()
+    cliente_falso = MagicMock()
+    cliente_falso.get.return_value = _resposta_json(
+        {"downoaldurl": "https://gallica.bnf.fr/ark:/12148/bpt6k6382082m"}
+    )
+
+    with patch(
+        "buscador.core.download_gallica_navegador.abrir_navegador", return_value=driver_falso
+    ) as abrir_mock, patch(
+        "buscador.core.download_gallica_navegador.ClienteEducado", return_value=cliente_falso
+    ):
+        with pytest.raises(DownloadNaoConcluidoError):
+            baixar_via_navegador("bpt6k6382082m", tmp_path, escondida=False, timeout_segundos=0.05)
+
+    abrir_mock.assert_called_once_with("gallica", headless=False, external_pdf=True, escondida=False)
