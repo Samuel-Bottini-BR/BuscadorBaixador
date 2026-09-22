@@ -6,7 +6,12 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from buscador.adapters.gallica import GallicaAdapter, MAXIMO_POR_PAGINA, RespostaVaziaInesperadaError
+from buscador.adapters.gallica import (
+    GallicaAdapter,
+    MAXIMO_POR_PAGINA,
+    RespostaVaziaInesperadaError,
+    construir_consulta_lote_ark_ids,
+)
 
 FIXTURE_PATH = pathlib.Path(__file__).parent / "fixtures" / "gallica" / "busca_clavius.xml"
 FIXTURE_TEXTO = FIXTURE_PATH.read_text(encoding="utf-8")
@@ -190,6 +195,25 @@ def test_pagina_vazia_antes_do_total_levanta_erro_em_vez_de_parar_silenciosament
 
     with pytest.raises(RespostaVaziaInesperadaError):
         list(adapter.iter_paginas())
+
+
+def test_construir_consulta_lote_ark_ids_com_um_id():
+    consulta = construir_consulta_lote_ark_ids(["bpt6k5554475x"])
+    assert consulta == 'dc.identifier all "ark:/12148/bpt6k5554475x"'  # sem "or" nenhum -- so 1 clausula
+
+
+def test_construir_consulta_lote_ark_ids_com_tres_ids_usa_or_na_ordem_dada():
+    consulta = construir_consulta_lote_ark_ids(["bpt6k5554475x", "btv1b8595063v", "bpt6k65373492"])
+    assert consulta == (
+        'dc.identifier all "ark:/12148/bpt6k5554475x" or '
+        'dc.identifier all "ark:/12148/btv1b8595063v" or '
+        'dc.identifier all "ark:/12148/bpt6k65373492"'
+    )
+
+
+def test_construir_consulta_lote_ark_ids_lista_vazia_levanta_valueerror():
+    with pytest.raises(ValueError):
+        construir_consulta_lote_ark_ids([])
 
 
 def test_sem_resultados_nao_quebra():

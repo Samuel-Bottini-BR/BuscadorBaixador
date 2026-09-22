@@ -33,6 +33,22 @@ MAXIMO_POR_PAGINA = 50  # limite documentado pela BnF -- pedir mais que isso de 
 _TERMOS_DOMINIO_PUBLICO = ("domaine public", "domaine publique", "public domain")
 
 
+def construir_consulta_lote_ark_ids(ark_ids):
+    """Monta uma consulta CQL que pede, numa unica chamada, varios itens de
+    uma vez pelo identificador ark deles -- em vez de um pedido por item
+    (que seria lento e bateria em limite de taxa do site). Confirmado ao
+    vivo que a Gallica aceita esse formato com "or" entre varias clausulas
+    'dc.identifier all "..."' e devolve todos os registros pedidos numa
+    resposta so. O resultado desta funcao vira o "consulta" que o
+    GallicaAdapter usa como string opaca (ele nao sabe nem precisa saber
+    como o CQL foi montado)."""
+    if not ark_ids:
+        # Lote vazio nao faz sentido pra consultar -- melhor falhar cedo e
+        # claro do que mandar uma consulta vazia pra API.
+        raise ValueError("ark_ids nao pode ser uma lista vazia")
+    return " or ".join(f'dc.identifier all "ark:/12148/{ark_id}"' for ark_id in ark_ids)
+
+
 class RespostaVaziaInesperadaError(Exception):
     # "Exception" é a classe base de erros do Python -- criar uma nova
     # classe que herda dela permite ter um TIPO de erro próprio, com nome
