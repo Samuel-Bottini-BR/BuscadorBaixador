@@ -188,7 +188,7 @@ def baixar_via_navegador(
 
     arquivos_antes = _listar_arquivos(pasta_destino)
 
-    driver = abrir_navegador("gallica", headless=headless)
+    driver = abrir_navegador("gallica", headless=headless, external_pdf=True)
     try:
         # Redireciona onde ESSE navegador salva downloads -- ver docstring
         # do módulo sobre por que isso é feito via CDP e não por parâmetro

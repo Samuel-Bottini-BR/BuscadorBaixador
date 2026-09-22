@@ -98,7 +98,7 @@ def test_baixar_via_navegador_levanta_erro_quando_download_nao_termina(tmp_path)
                 "bpt6k6382082m", tmp_path, headless=True, timeout_segundos=0.05
             )
 
-    abrir_mock.assert_called_once_with("gallica", headless=True)
+    abrir_mock.assert_called_once_with("gallica", headless=True, external_pdf=True)
     driver_falso.get.assert_called_once_with("https://gallica.bnf.fr/ark:/12148/bpt6k6382082m.pdf")
     # o navegador tem que ser fechado mesmo quando o download falha (finally)
     driver_falso.quit.assert_called_once()

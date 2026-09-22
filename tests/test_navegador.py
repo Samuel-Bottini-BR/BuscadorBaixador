@@ -16,7 +16,19 @@ def test_abrir_navegador_cria_pasta_de_perfil_e_chama_driver(tmp_path):
 
     perfil = tmp_path / "internet_archive"
     assert perfil.exists()
-    driver_mock.assert_called_once_with(headless=True, user_data_dir=str(perfil))
+    # external_pdf tem default False -- quem chama sem passar esse
+    # parâmetro (ex. logar.py/resolver_na_mao) continua se comportando
+    # igual a antes (Chrome abre PDF no visualizador embutido, como sempre).
+    driver_mock.assert_called_once_with(headless=True, user_data_dir=str(perfil), external_pdf=False)
+
+
+def test_abrir_navegador_repassa_external_pdf_true_pro_driver(tmp_path):
+    with patch("buscador.core.navegador.PASTA_SESSOES", tmp_path), \
+         patch("buscador.core.navegador.Driver") as driver_mock:
+        abrir_navegador("gallica", headless=True, external_pdf=True)
+
+    perfil = tmp_path / "gallica"
+    driver_mock.assert_called_once_with(headless=True, user_data_dir=str(perfil), external_pdf=True)
 
 
 def test_abrir_navegador_nunca_passa_parametros_de_disfarce(tmp_path):

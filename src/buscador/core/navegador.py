@@ -45,11 +45,18 @@ def caminho_perfil(nome_perfil: str) -> Path:
     return PASTA_SESSOES / nome_perfil
 
 
-def abrir_navegador(nome_perfil: str, headless: bool = True) -> Driver:
+def abrir_navegador(nome_perfil: str, headless: bool = True, external_pdf: bool = False) -> Driver:
     """Abre um Chrome com a pasta isolada desse nome (login/cookies/etc
     persistem sozinhos entre execucoes). headless=True roda invisivel
     (coleta automatica); headless=False abre a janela (para o Samuel
     resolver login/CAPTCHA na mao).
+
+    external_pdf=True desliga o visualizador de PDF embutido do Chrome
+    (equivale a `plugins.always_open_pdf_externally` nas configurações do
+    Chrome) -- sem isso, o Chrome ABRE o PDF na tela em vez de baixar o
+    arquivo pra pasta de destino. Default False preserva o comportamento
+    de sempre (ex.: quem loga no Internet Archive via logar.py/
+    resolver_na_mao não quer nem precisa disso).
 
     IMPORTANTE ao usar o modo visivel: a janela que abre e' NOVA e
     ISOLADA -- sem historico, sem favorito, sem login nenhum do seu
@@ -60,7 +67,7 @@ def abrir_navegador(nome_perfil: str, headless: bool = True) -> Driver:
     perfil.mkdir(parents=True, exist_ok=True)
     # ! NUNCA passar uc=True, uc_cdp=True nem uc_sub=True aqui -- ver aviso
     # ! no topo do arquivo. Só os parâmetros normais de automação (sem disfarce).
-    return Driver(headless=headless, user_data_dir=str(perfil))
+    return Driver(headless=headless, user_data_dir=str(perfil), external_pdf=external_pdf)
 
 
 def resolver_na_mao(nome_perfil: str, url: str) -> None:
