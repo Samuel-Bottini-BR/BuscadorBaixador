@@ -81,7 +81,7 @@ def _sha256_arquivo(caminho: Path) -> str:
     return hasher.hexdigest()
 
 
-def baixar_um(ark_id: str, pasta_destino: Path, baixar_fct=baixar_via_navegador) -> dict:
+def baixar_um(ark_id: str, pasta_destino: Path, baixar_fct=baixar_via_navegador, timeout_segundos=None) -> dict:
     """Baixa uma obra pelo ark id, usando baixar_fct (por padrão,
     baixar_via_navegador -- injetável pra testar sem abrir navegador de
     verdade). A Gallica nomeia o arquivo baixado com o título real da obra,
@@ -90,12 +90,20 @@ def baixar_um(ark_id: str, pasta_destino: Path, baixar_fct=baixar_via_navegador)
     calcular o sha256, pra manter o catálogo e a pasta de destino
     previsíveis independente do título de cada obra.
 
+    timeout_segundos (opcional): repassado pra baixar_fct quando informado
+    -- achado ao vivo do lote real desta tarefa: o default de
+    baixar_via_navegador (ver TIMEOUT_PADRAO_SEGUNDOS em
+    core/download_gallica_navegador.py) pode não bastar dependendo das
+    condições de rede/tamanho do arquivo; deixar configurável aqui evita
+    ficar preso a um único valor fixo pra um lote inteiro.
+
     Returns:
         dict com sha256, caminho_local (string), bytes e baixado_em (ISO
         8601 UTC) -- pronto pra virar uma entrada do catálogo.
     """
     pasta_destino = Path(pasta_destino)
-    caminho_baixado = baixar_fct(ark_id, pasta_destino)
+    kwargs = {} if timeout_segundos is None else {"timeout_segundos": timeout_segundos}
+    caminho_baixado = baixar_fct(ark_id, pasta_destino, **kwargs)
     caminho_final = pasta_destino / f"{ark_id}.pdf"
     if Path(caminho_baixado) != caminho_final:
         Path(caminho_baixado).replace(caminho_final)
@@ -121,6 +129,7 @@ def baixar_lote(
     baixar_fct=baixar_via_navegador,
     dormir=time.sleep,
     progresso_fct=None,
+    timeout_segundos=None,
 ) -> CheckpointDownload:
     """Roda ou retoma o download de uma lista inteira de ark ids, um por
     vez. Pula (sem re-baixar) qualquer ark_id que já esteja no catálogo
@@ -137,6 +146,9 @@ def baixar_lote(
 
     `dormir`/`progresso_fct` seguem o mesmo padrão injetável do resto do
     projeto (testar sem esperar tempo real / sem I/O de console).
+    `timeout_segundos` (opcional) é repassado pra cada chamada de
+    baixar_um -- deixa configurável por lote em vez de ficar preso ao
+    default fixo de baixar_via_navegador.
     """
     diretorio_job = Path(diretorio_job)
     pasta_destino = Path(pasta_destino)
@@ -160,7 +172,7 @@ def baixar_lote(
             continue
 
         try:
-            info = baixar_um(ark_id, pasta_destino, baixar_fct=baixar_fct)
+            info = baixar_um(ark_id, pasta_destino, baixar_fct=baixar_fct, timeout_segundos=timeout_segundos)
         except Exception as erro:
             # Erro de infraestrutura de 1 item (navegador travou, download
             # não completou, rede caiu no meio) -- não interrompe o lote;

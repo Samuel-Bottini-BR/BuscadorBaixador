@@ -24,7 +24,7 @@ def _baixar_fct_fake(conteudos_por_ark, nomes_arquivo=None):
     testar baixar_um/baixar_lote sem abrir navegador nenhum. nomes_arquivo
     permite simular o nome real que a Gallica da ao arquivo (diferente de
     "<ark_id>.pdf", como acontece de verdade -- ver baixar_via_navegador)."""
-    def _fake(ark_id, pasta_destino):
+    def _fake(ark_id, pasta_destino, **_kwargs):
         conteudo = conteudos_por_ark[ark_id]
         nome = (nomes_arquivo or {}).get(ark_id, f"{ark_id}.pdf")
         caminho = pasta_destino / nome
@@ -46,6 +46,23 @@ def test_baixar_um_calcula_sha256_do_arquivo_ja_em_disco(tmp_path):
     assert info["bytes"] == len(conteudo)
     assert info["caminho_local"] == str(tmp_path / "abc123.pdf")
     assert "baixado_em" in info
+
+
+def test_baixar_um_repassa_timeout_segundos_pra_baixar_fct(tmp_path):
+    # Achado ao vivo da Tarefa C4: sem essa passagem, baixar_lote não tinha
+    # como pedir mais tempo por item -- ficava preso no default de
+    # baixar_via_navegador, que se mostrou curto demais na prática.
+    recebido = {}
+
+    def fake(ark_id, pasta_destino, timeout_segundos=None):
+        recebido["timeout_segundos"] = timeout_segundos
+        caminho = pasta_destino / f"{ark_id}.pdf"
+        caminho.write_bytes(b"%PDF-1.4 x")
+        return caminho
+
+    baixar_um("abc123", tmp_path, baixar_fct=fake, timeout_segundos=180.0)
+
+    assert recebido["timeout_segundos"] == 180.0
 
 
 def test_baixar_um_renomeia_pro_nome_canonico_ark_id_pdf(tmp_path):
@@ -98,6 +115,28 @@ def test_carregar_ou_criar_checkpoint_recusa_total_arks_divergente(tmp_path):
 # --- baixar_lote -----------------------------------------------------------
 
 
+def test_baixar_lote_repassa_timeout_segundos_pra_cada_item(tmp_path):
+    recebidos = []
+
+    def fake(ark_id, pasta_destino, timeout_segundos=None):
+        recebidos.append(timeout_segundos)
+        caminho = pasta_destino / f"{ark_id}.pdf"
+        caminho.write_bytes(b"%PDF-1.4 x")
+        return caminho
+
+    baixar_lote(
+        ["a1", "a2"],
+        diretorio_job=tmp_path / "job",
+        pasta_destino=tmp_path / "baixados",
+        caminho_catalogo=tmp_path / "catalogo.json",
+        baixar_fct=fake,
+        dormir=lambda s: None,
+        timeout_segundos=240.0,
+    )
+
+    assert recebidos == [240.0, 240.0]
+
+
 def test_baixar_lote_baixa_todos_e_cataloga(tmp_path):
     ark_ids = ["a1", "a2", "a3"]
     conteudos = {ark: f"%PDF-1.4 conteudo {ark}".encode() for ark in ark_ids}
@@ -132,7 +171,7 @@ def test_baixar_lote_pula_item_ja_catalogado_com_sucesso(tmp_path):
     conteudos = {"a2": b"%PDF-1.4 conteudo a2"}
     fake = _baixar_fct_fake(conteudos)
     chamadas = []
-    fake_com_registro = lambda ark_id, pasta: (chamadas.append(ark_id), fake(ark_id, pasta))[1]
+    fake_com_registro = lambda ark_id, pasta, **kw: (chamadas.append(ark_id), fake(ark_id, pasta, **kw))[1]
 
     checkpoint = baixar_lote(
         ark_ids,
@@ -150,7 +189,7 @@ def test_baixar_lote_pula_item_ja_catalogado_com_sucesso(tmp_path):
 def test_baixar_lote_falha_isolada_nao_derruba_o_lote(tmp_path):
     ark_ids = ["a1", "a2", "a3"]
 
-    def fake_com_falha(ark_id, pasta_destino):
+    def fake_com_falha(ark_id, pasta_destino, **_kwargs):
         if ark_id == "a2":
             raise RuntimeError("navegador travou nesse item")
         caminho = pasta_destino / f"{ark_id}.pdf"
@@ -181,7 +220,7 @@ def test_baixar_lote_retomada_apos_interrupcao_nao_perde_nem_duplica(tmp_path):
 
     chamadas = []
 
-    def fake_com_interrupcao(ark_id, pasta):
+    def fake_com_interrupcao(ark_id, pasta, **_kwargs):
         chamadas.append(ark_id)
         if ark_id == "a3":
             raise KeyboardInterrupt("simulando interrupcao no meio do lote")
@@ -200,7 +239,7 @@ def test_baixar_lote_retomada_apos_interrupcao_nao_perde_nem_duplica(tmp_path):
     # retoma: a1/a2 já catalogados não devem ser re-baixados; a3 (que
     # nunca chegou a ser catalogado, pois a exceção interrompeu antes do
     # catálogo ser salvo) e a4 devem ser processados agora
-    def fake_retomada(ark_id, pasta):
+    def fake_retomada(ark_id, pasta, **_kwargs):
         chamadas.append(ark_id)
         caminho = pasta / f"{ark_id}.pdf"
         caminho.write_bytes(f"conteudo {ark_id}".encode())

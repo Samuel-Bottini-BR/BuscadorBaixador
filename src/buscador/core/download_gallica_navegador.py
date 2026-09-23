@@ -98,7 +98,14 @@ USER_AGENT = (
 # pronto" -- ver esperar_novo_arquivo.
 SUFIXO_DOWNLOAD_PARCIAL = ".crdownload"
 
-TIMEOUT_PADRAO_SEGUNDOS = 60.0
+# Achado ao vivo do lote real da Tarefa C4: com 60s (valor antigo), TODAS
+# as tentativas reais falharam com DownloadNaoConcluidoError -- mesmo o
+# modo visível simples, já confirmado funcionando (C-nav2), levou 61,8s, e
+# a confirmação da C-nav8 (já com o fix de visitar a página-base primeiro)
+# levou 69,2s. 60s não deixava margem nenhuma pra variação real (rede,
+# tamanho do arquivo, velocidade do desafio Altcha). 180s é o valor que as
+# confirmações ao vivo bem-sucedidas já usaram.
+TIMEOUT_PADRAO_SEGUNDOS = 180.0
 INTERVALO_PADRAO_SEGUNDOS = 1.0
 
 

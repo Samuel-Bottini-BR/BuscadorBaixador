@@ -4,11 +4,24 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from buscador.core.download_gallica_navegador import (
+    TIMEOUT_PADRAO_SEGUNDOS,
     DownloadNaoConcluidoError,
     baixar_via_navegador,
     esperar_novo_arquivo,
     montar_url_pdf,
 )
+
+
+def test_timeout_padrao_e_generoso_o_suficiente_pra_download_real():
+    # Achado ao vivo do lote real da Tarefa C4: com o timeout padrão de
+    # 60s (valor antigo), TODAS as tentativas reais deram
+    # DownloadNaoConcluidoError -- mesmo o modo visível simples, já
+    # confirmado funcionando antes, levou 61,8s (C-nav2) e a confirmação
+    # da C-nav8 (com o fix de visitar a página-base primeiro) levou 69,2s.
+    # 60s não dá margem nenhuma pra variação real (rede, tamanho do
+    # arquivo, velocidade do desafio Altcha). 180s é o valor que as
+    # confirmações ao vivo bem-sucedidas já usaram.
+    assert TIMEOUT_PADRAO_SEGUNDOS == 180.0
 
 
 def test_montar_url_pdf_junta_base_com_ponto_pdf():
