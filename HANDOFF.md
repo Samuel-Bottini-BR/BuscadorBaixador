@@ -1,5 +1,148 @@
 # Buscador e Baixador — estado atual
 
+## Checkpoint 23/09/2026 (sessão 6) — Tarefa C4 (download em lote) implementada e testada; lote real BLOQUEADO pela Gallica hoje — leia aqui primeiro
+
+**Contexto que este handoff NÃO tinha até agora:** entre a sessão 5 (checkpoint
+abaixo) e esta sessão, houve uma sessão inteira (mesmo dia 22/09, branch nova
+`feat/gallica-cruzamento-download`) que implementou um plano grande de
+cruzamento + download da Gallica, mas **nunca atualizou este arquivo** — só o
+ledger interno (`.superpowers/sdd/vamos-colocar-essas-coisas-federated-cherny/`,
+gitignored). Esta seção cobre as duas sessões (22/09 e 23/09) juntas, já que
+nenhuma das duas tinha sido registrada aqui ainda.
+
+**Branch:** `feat/gallica-cruzamento-download`, 17 commits (`08ceb4b..7d3615f`),
+**enviada ao GitHub nesta sessão pela primeira vez** (não tinha remoto
+configurado — 13 commits ficaram só locais por uma sessão inteira até eu notar
+e dar `git push -u origin ...`). `master` continua no estado do motor de jobs
+(checkpoint 20/09 abaixo) — **esta branch ainda não foi mesclada**, decisão do
+Samuel em aberto.
+
+**O que está pronto e commitado nesta branch:**
+- **Parte A** (cruzamento/dedup genérico, `core/cruzamento.py`) e **Parte B**
+  (backfill de metadado em lote, `core/backfill_gallica.py`) — completas,
+  revisadas (subagent-driven-development), sem pendência.
+- **Parte C, mecanismo de download (C-nav1 a C-nav8)**: navegador real
+  (`seleniumbase`, sem nenhum disfarce/UC-Mode) com janela **escondida**
+  (posição fora da tela + flag anti-throttling do Chrome) resolve o desafio
+  anti-robô "Altcha" da Gallica sozinho. **Confirmado ao vivo com sucesso**
+  nesta sessão: PDF real de 28.543.823 bytes baixado, nenhuma janela visível,
+  69,2s (`core/download_gallica_navegador.py::baixar_via_navegador`).
+- **Tarefa C4 (motor de download em lote), implementada nesta sessão**:
+  `core/baixar_gallica.py` — `CheckpointDownload`, `baixar_um`, `baixar_lote`.
+  Mesmo desenho de resiliência do backfill (checkpoint retomável, catálogo
+  permanente mesclado via `salvar_json_atomico`, falha isolada de 1 item não
+  derruba o lote). **Só validado por teste automatizado (mockado) — a
+  execução real contra a Gallica está BLOQUEADA, ver abaixo.**
+- **324 testes passando** (`pytest -q`, ~32s).
+
+**A4 (CLI de cruzamento que geraria a lista definitiva de arks faltantes)
+NUNCA foi implementada** — só A0-A3 (as peças de apoio) existem. O número
+"26.876 obras da lista-alvo" citado no plano original é só a contagem bruta de
+ark ids únicos do mapeamento por curadoria (`saidas/gallica_mapa_livros.json`,
+46.222 itens), não o resultado de cruzar com a coleta SRU. Pra testar o
+download sem esperar A4, usei uma amostra direto desse mapeamento.
+
+**Achado corrigido: `extrair_ark_id` grudava lixo no final do ark id.**
+~15% dos ark ids únicos do mapeamento (4.193 de 26.876) vinham com sufixo
+grudado (`.item` sem barra antes, `?rk=...` de busca, `#` de fragmento,
+pontuação/espaço de raspagem) porque a regex antiga só sabia parar numa barra
+`/`. Corrigida pra parar em qualquer caractere não-alfanumérico
+(`core/chaves_gallica.py`, commit `eca39fc`, TDD com 4 exemplos reais tirados
+do próprio dataset). **Contagem real de ark ids únicos, com o fix: 26.544**
+(não 26.876 — usar esse número daqui pra frente, inclusive quando A4 for
+implementada).
+
+**Achado corrigido: timeout de download curto demais.** O default de
+`baixar_via_navegador` era 60s — a Tarefa C-nav8 (mais cedo nesta sessão) já
+tinha levado 69,2s pra completar com sucesso, quase sem margem. Confirmado ao
+vivo: um lote de teste com 60s deu **9/9 falhas**. Subi o default pra **180s**
+e adicionei `timeout_segundos` configurável em `baixar_um`/`baixar_lote`
+(commit `7d3615f`), que antes não existia.
+
+**BLOQUEIO ATUAL (não resolvido, sem tentativa de contorno): o lote real de
+download parou de funcionar depois de muitas tentativas seguidas hoje.**
+Mesmo com o timeout corrigido pra 180s, um segundo lote de teste real (40
+itens, ~115 minutos de execução) deu **40/40 falhas**. Investigado (sem
+decidir nada sozinho, sem tentar burlar nada):
+- GET simples (sem navegador) na página-base e no `.pdf` devolvem 200 normal
+  — não é bloqueio HTTP básico tipo 429. O `.pdf` devolve a própria página
+  HTML do desafio ("Gallica | Vérification de sécurité", Altcha).
+- Um banner de consentimento de cookies aparece na página (achado via
+  screenshot) — testado e **descartado como causa**: cliquei em "Tout
+  accepter" via JavaScript (interação normal, sem disfarce) antes de navegar
+  pro `.pdf`, e o download **ainda falhou** (controle isolado, 1 item, 90s).
+- A explicação mais provável (não confirmada com certeza): a MESMA técnica
+  funcionou ao vivo mais cedo no mesmo dia (C-nav8: sucesso, 69,2s) e parou de
+  funcionar depois de ~49 tentativas consecutivas nesta sessão (9 + 40). Tem
+  cheiro de throttling/escalonamento do desafio Altcha do lado do site em
+  resposta ao volume de hoje — mesmo padrão de 429/cooldown já visto várias
+  vezes neste projeto (coleta SRU, backfill). **Não é um bug de código** —
+  os dois fixes desta sessão (timeout, extrair_ark_id) continuam válidos e
+  corretos, só não bastaram pra destravar isso.
+- Limpeza feita: `saidas/gallica_download_teste/` (job de teste, todo falha,
+  nada de útil pra preservar) removido; nenhum processo `chrome.exe`/
+  `chromedriver.exe` órfão (confirmado via `tasklist`).
+
+**Próximo passo recomendado:** esperar (talvez um dia) e tentar de novo o
+lote real — o mecanismo em si (C-nav1 a C-nav8) está correto e confirmado
+funcionando pelo menos uma vez. A amostra de 40 ark ids usada nesta sessão
+não foi salva no repo (ficou só no scratchpad temporário da sessão, perdida);
+gerar uma nova amostra real assim (Git Bash, raiz do projeto):
+
+```
+.venv/Scripts/python.exe -c "
+import json, random, sys
+sys.path.insert(0, 'src')
+from buscador.core.chaves_gallica import extrair_ark_id
+itens = json.load(open('saidas/gallica_mapa_livros.json', encoding='utf-8'))
+unicos = sorted({extrair_ark_id(i['link']) for i in itens} - {None})
+random.seed(42)  # mesma seed da sessão 6, pra reprodutibilidade
+amostra = random.sample(unicos, 40)
+json.dump(amostra, open('amostra_c4.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+print(len(unicos), 'unicos;', len(amostra), 'na amostra')
+"
+```
+
+Depois rodar o lote de verdade (pode levar dezenas de minutos a horas — cada
+item passa pelo navegador real; rodar em segundo plano):
+
+```
+.venv/Scripts/python.exe -c "
+import json, sys
+sys.path.insert(0, 'src')
+from buscador.core.baixar_gallica import baixar_lote
+ark_ids = json.load(open('amostra_c4.json', encoding='utf-8'))
+checkpoint = baixar_lote(ark_ids, 'saidas/gallica_download_teste/job',
+    'saidas/gallica_download_teste/pdfs', 'saidas/gallica_download_teste/catalogo.json',
+    progresso_fct=lambda cp: print(cp))
+print(checkpoint)
+"
+```
+
+O checkpoint é retomável — se parar no meio (interrupção, falha, timeout do
+terminal), rodar o mesmo comando de novo continua de onde parou, sem duplicar
+nem perder nada já baixado/catalogado. Se o bloqueio persistir mesmo depois
+de esperar, considerar: (a) reduzir o tamanho do lote de teste (10-15 itens
+em vez de 40) pra gerar menos volume de tentativas seguidas; (b) intervalo
+maior entre itens (hoje `baixar_lote` não tem cooldown nenhum entre
+downloads, diferente de `backfill`/`coleta_gallica`, que pausam em 429 —
+pode valer adicionar um `dormir` fixo pequeno entre itens).
+
+**Pendências antigas (sessão 5, ainda sem decisão do Samuel — não tocadas
+nesta sessão, working tree ainda tem):**
+1. `scripts/categorizar_amostra_gallica.py` (modificado) e
+   `scripts/traduzir_titulos_lote_gallica.py` (novo) — aguardando decisão
+   sobre os 9.086 itens em "Outros" e a qualidade da tradução offline (ver
+   checkpoint 20/09 abaixo, "Perguntas em aberto pro Samuel", itens 1-3).
+2. Os 3 `.bat` irmãos com o mesmo bug de pip do `jobs.bat` — sem correção.
+3. 4 PDFs soltos em `Claude outputs/` são de outro projeto (Livro Profecias
+   TIA) — não commitar, é conhecido.
+
+**Ambiente:** nada novo instalado nesta sessão — mesmo `.venv` Python 3.12.10
+das sessões anteriores. `pywin32` (`win32gui`/`win32api`) já estava disponível
+e foi usado só pra diagnóstico (scripts fora do repo, no scratchpad da sessão),
+não é dependência nova do projeto.
+
 ## Checkpoint 20/09/2026 (sessão 5) — motor de jobs PRONTO (correção + smoke manual feitos, na master); coleta SRU da Gallica TERMINOU — leia aqui primeiro
 
 **Estado:** branch de trabalho `feat/fase1-mapeador` **já integrada na `master`** (merge local sem checkout, fast-forward `fad9010..621748d`, `git push origin master` feito) — a `master` do GitHub tem o motor de jobs completo. **242 testes passando** (rodados nesta sessão, ~21 s). Retomado pelo comando `/projeto`; Samuel pediu "a onda de correção + smoke manual + relançar a coleta" e tudo foi concluído nesta sessão.
