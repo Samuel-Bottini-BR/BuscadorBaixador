@@ -1,5 +1,177 @@
 # Buscador e Baixador — estado atual
 
+## Checkpoint 24/09/2026 (sessão 7) — mapeamento por curadoria FINALIZADO (dedup + categorização + tradução, 26.544/26.544); download em lote ainda bloqueado, com achado novo — leia aqui primeiro
+
+**Retomado pelo comando `/projeto`.** Contexto herdado da sessão 6 (checkpoint
+logo abaixo): o mecanismo de download em lote da Gallica (Tarefa C4) tinha
+travado num bloqueio não resolvido. Nesta sessão, duas frentes avançaram: (1)
+uma nova tentativa do download real, que revelou um achado importante sobre o
+bloqueio; (2) o mapeamento por curadoria editorial (46.222 itens, pendência
+desde 12-13/09) foi **finalizado de ponta a ponta** — dedup, categorização e
+tradução, os três com resultado real confirmado, não só código.
+
+### Download em lote da Gallica: tentativa nova, ainda bloqueado, achado importante
+
+Depois de esperar (a pedido do Samuel, "já esperei o tempo"), rodei um lote
+real de 15 itens (amostra nova, seed diferente da sessão 6, pra não repetir os
+mesmos 40 que já tinham falhado). **Resultado: 15/15 falhas de novo — mas com
+tipos de erro DIFERENTES da sessão 6**, o que muda a interpretação:
+- 5 itens: mesmo padrão de antes (desafio anti-robô não passou em 180s).
+- 5 itens: **503 Service Unavailable** no endpoint de download — NOVO; antes o
+  site respondia 200 com a página do desafio, nunca 503.
+- 5 itens: **timeout de conexão puro** (site nem respondeu em 15s) — também
+  NOVO.
+
+**Interpretação (não confirmada com certeza):** a mistura de 503 + timeout de
+conexão puro enfraquece a teoria de "só throttling do Altcha que reseta em um
+dia" da sessão 6 — pode ser algo mais forte/duradouro do lado da Gallica, ou
+até instabilidade genuína da infraestrutura da BnF sem relação nenhuma com
+nossas tentativas anteriores. **Não foi investigado mais a fundo** (ex.: não
+testei se `gallica.bnf.fr` está acessível normalmente por fora do mecanismo de
+download) — isso ficou oferecido ao Samuel como próximo passo, sem resposta
+ainda. **Nenhuma tentativa de contorno foi feita** (sem disfarce, sem proxy,
+sem trocar User-Agent) — mesma linha de sempre. Limpeza feita: pasta de teste
+(`saidas/gallica_download_teste/`, só continha falha) removida; confirmado
+via `Get-CimInstance`/`tasklist` que não sobrou processo Chrome órfão nem PDF
+parcial.
+
+### Mapeamento por curadoria (46.222 itens): FINALIZADO — dedup, categorização e tradução, os três com resultado real
+
+Isso resolve a pendência que estava em aberto desde a sessão 2 (17/09) e o
+Achado da sessão 6 sobre 46.222 vs 26.544 (ver seção "O que aconteceu com o
+mapeamento da Gallica", mais abaixo, pro histórico completo de como esse
+número apareceu). Trabalho pedido explicitamente pelo Samuel nesta sessão
+("vamos corrigir definitivamente o problema de duplicatas e categorias"),
+executado por um agente em segundo plano (dedup + recategorização) enquanto a
+conversa principal seguia noutras coisas, e a tradução rodada eu mesmo depois.
+**Tudo verificado de forma independente por mim antes de reportar como
+concluído** (reli os scripts gerados, recontei os números).
+
+1. **Deduplicação por ark_id** — script novo `scripts/deduplicar_gallica_por_ark.py`.
+   Reaproveita infraestrutura já testada (`core/cruzamento.py::colapsar_por_chave`
+   + `core/chaves_gallica.py::extrair_ark_id`), não reimplementa dedup na mão.
+   **Confirmado ao vivo**: todos os 46.222 itens têm ark_id extraível (zero sem
+   chave — checado antes de rodar, não só depois). Resultado: **46.222 → 26.544
+   obras únicas** (7.862 grupos tinham duplicata — o mesmo livro aparecendo sob
+   mais de uma trilha de navegação, porque a Gallica cruza links entre
+   categorias diferentes). Saída: `saidas/gallica_mapa_livros_dedupado.json`
+   (gitignored).
+2. **Recategorização sobre a lista deduplicada** — `scripts/categorizar_amostra_gallica.py`
+   ajustado pra ler `gallica_mapa_livros_dedupado.json` em vez do bruto.
+   **Importante: o algoritmo de categorização (`categorizar()`, os `BALDES`)
+   NÃO foi mudado** — ele já estava correto desde a sessão 2 (usa só o ÚLTIMO
+   segmento da trilha de navegação + título como reforço, nunca a trilha
+   inteira; ver seção "Padrão de planilha aprovado", mais abaixo, pro
+   histórico). A única mudança foi a fonte dos dados (deduplicada em vez de
+   bruta com repetição) — isso já resolve a distorção de contagem sozinho.
+   Distribuição final sobre as 26.544 obras únicas (soma confere exato, sem
+   item perdido nem duplicado — o próprio script verifica isso com um assert):
+   - Literatura Clássica Francesa: 8.143 (30,7%)
+   - **Outros: 6.757 (25,5%)** — ainda a 2ª maior fatia; ver pergunta em aberto abaixo
+   - Paris e História Local: 4.961 (18,7%)
+   - Quadrinhos: 3.394 (12,8%)
+   - Ciências e Natureza: 1.758 (6,6%)
+   - Manuscritos Medievais: 746 (2,8%)
+   - Referência e Enciclopédias: 451 (1,7%)
+   - Traduções e Literaturas Estrangeiras: 231 (0,9%)
+   - Religião e Teologia: 103 (0,4%)
+   Saída: `saidas/gallica_categorizado_dedupado.json` (gitignored). O arquivo
+   antigo `saidas/gallica_categorizado_completo.json` (rodada sobre o bruto,
+   46.222 com duplicata) ficou intacto, de referência.
+3. **Tradução completa (100%)** — `scripts/traduzir_titulos_lote_gallica.py`
+   ajustado pra ler a lista deduplicada+categorizada. **Rodado ao vivo até o
+   fim, 4 passadas retomáveis** (o script já é desenhado pra isso — cada
+   passada só tenta de novo quem ainda não tem `titulo_traduzido`):
+   - Passada 1: 24.635/26.544 (92,8%) em 117,6 min.
+   - Passada 2: +1.431 (só os 1.909 pendentes da 1ª) em 11,8 min.
+   - Passada 3: +249 (só os 478 pendentes da 2ª) em 3,0 min.
+   - Passada 4: +229 (só os 229 pendentes da 3ª) em 0,8 min. **100% concluído,
+     zero pendente.**
+   **Achado confirmado ao vivo** (a docstring do script já previa isso, mas
+   nunca tinha sido confirmado até esta sessão): o motivo de sobrar pendente
+   entre passadas não é falha permanente, é timeout de lote em títulos "fora
+   do francês comum" (occitano medieval, transliteração árabe) que demoram
+   minutos em vez de frações de segundo — retomar com menos itens concorrendo
+   pelos mesmos 8 workers deixa eles terminarem dentro da janela de 180s.
+   **Nenhum título ficou permanentemente travado** nesta rodada real (zero
+   restante depois de 4 passadas) — mas isso pode não valer pra sempre se o
+   dataset mudar; se uma sessão futura rodar de novo e ver pendência que não
+   cai mesmo depois de várias passadas, não é bug, é esperado (ver docstring
+   do script).
+   Saída: `saidas/gallica_categorizado_traduzido.json` (gitignored, 26.544
+   itens, campos `titulo`, `titulo_traduzido`, `categoria_padronizada`,
+   `ark_id`, `link`). Qualidade da tradução ainda é a offline (fr→en→pt via
+   argostranslate) — a pergunta de qualidade (aceitar ou tentar melhorar)
+   continua em aberto, ver abaixo.
+4. **Os 3 `.bat` irmãos corrigidos** (`gallica_crawl.bat`, `gallica_enriquecer.bat`,
+   `mapear.bat`) — mesmo fix de 1 caractere que o `jobs.bat` já tinha
+   (`-e "%~dp0"` → `-e "%~dp0."`; sem o ponto final, a barra invertida de
+   `%~dp0` escapa a aspa final e quebra o argumento do pip). Autorizado
+   explicitamente pelo Samuel nesta sessão.
+
+**Achado à parte, sem consequência real (registrado só pra não confundir
+sessão futura):** ao imprimir títulos com acento no terminal Git Bash deste
+projeto, aparece um caractere de substituição (tipo "ob�issance" em vez de
+"obéissance") — **isso é só a codepage do console, não um problema real nos
+dados.** Confirmado: o arquivo JSON tem zero ocorrências reais do caractere
+de substituição Unicode; escrever o título num arquivo e ler de volta mostra
+o acento certinho. Não gastar tempo investigando "corrupção de dado" se isso
+aparecer nu terminal de novo — é cosmético do terminal.
+
+**Commit feito e enviado**: `c70a507` na branch `feat/gallica-cruzamento-download`
+(ainda não mesclada na `master` — decisão do Samuel em aberto, igual sessões
+anteriores). Inclui os 3 scripts (`deduplicar_gallica_por_ark.py` novo,
+`categorizar_amostra_gallica.py` e `traduzir_titulos_lote_gallica.py`
+ajustados) e os 3 `.bat` corrigidos. **Nada de `saidas/` entrou no commit**
+(gitignored, como sempre). 324 testes continuam passando (rodado antes do
+commit).
+
+### Perguntas em aberto (exatas) — atualizado nesta sessão
+
+1. **Os 6.757 itens em "Outros" (25,5% das 26.544 obras únicas, número NOVO
+   desta sessão — antes era 9.086 sobre o bruto com duplicata)**: criar
+   balde(s) novo(s) ou deixar assim? (pergunta antiga, só o número mudou)
+2. **Qualidade da tradução offline** (fr→en→pt via argostranslate, sem
+   passar por Google/MyMemory que já se mostraram sem cota suficiente pra
+   este volume): aceitar como está, ou vale tentar melhorar depois (ex.:
+   esperar cota do MyMemory resetar, ou pagar API)? (pergunta antiga)
+3. **Gerar a planilha final** (padrão "índice + abas" aprovado em 15/09) a
+   partir de `saidas/gallica_categorizado_traduzido.json` — falta rodar
+   `scripts/gerar_planilha_padrao_gallica.py` (hoje só roda em cima da
+   amostra pequena de teste; precisa confirmar se aceita a lista de 26.544
+   direto ou se precisa de ajuste). Perguntei ao Samuel se quer isso agora ou
+   prefere decidir a pergunta 1 primeiro — ficou sem resposta (foi pro
+   `/checkpoint` antes de decidir).
+4. **Download bloqueado (ver seção acima)**: se o bloqueio persistir, vale
+   (a) investigar se é a Gallica inteira fora do ar (não só o download) ou
+   (b) reduzir mais o lote de teste (5 itens?) ou (c) só esperar mais tempo
+   de novo. Não decidido.
+5. Pendências mais antigas, ainda sem resposta (ver checkpoints anteriores
+   pro texto exato): salvar o relatório de pesquisa do Livro Profecias TIA
+   dentro daquele projeto; mesclar `feat/gallica-cruzamento-download` na
+   `master`.
+
+**Próximo passo recomendado:** decidir a pergunta 1 (baldes "Outros") e/ou a
+pergunta 3 (gerar planilha final) — o mapeamento por curadoria está
+tecnicamente pronto pra virar planilha entregável, só falta essa decisão (ou
+autorização pra gerar do jeito que está, com "Outros" como categoria
+residual). Em paralelo, considerar investigar a causa do 503/timeout do
+download (pergunta 4) antes de tentar de novo.
+
+**Como rodar/testar:**
+```
+D:\programas\BuscadorBaixador\.venv\Scripts\python.exe -m pytest -q
+D:\programas\BuscadorBaixador\.venv\Scripts\python.exe scripts\deduplicar_gallica_por_ark.py
+D:\programas\BuscadorBaixador\.venv\Scripts\python.exe scripts\categorizar_amostra_gallica.py
+D:\programas\BuscadorBaixador\.venv\Scripts\python.exe scripts\traduzir_titulos_lote_gallica.py
+```
+(os 3 scripts acima são idempotentes/retomáveis — rodar de novo sem mudar
+nada não deveria alterar o resultado já salvo, exceto o de tradução, que só
+mexe em itens ainda sem `titulo_traduzido`.)
+
+**Ambiente:** nada novo instalado nesta sessão — mesmo `.venv` das sessões
+anteriores.
+
 ## Checkpoint 23/09/2026 (sessão 6) — Tarefa C4 (download em lote) implementada e testada; lote real BLOQUEADO pela Gallica hoje — leia aqui primeiro
 
 **Contexto que este handoff NÃO tinha até agora:** entre a sessão 5 (checkpoint
