@@ -1,6 +1,158 @@
 # Buscador e Baixador — estado atual
 
-## Checkpoint 24/09/2026 (sessão 7) — mapeamento por curadoria FINALIZADO (dedup + categorização + tradução, 26.544/26.544); download em lote ainda bloqueado, com achado novo — leia aqui primeiro
+## Checkpoint 05-06/10/2026 (sessão 8) — Módulo Telegram, 1º uso real: 2 tópicos baixados por inteiro (2.117 arquivos, 125,7 GB) com `tdl` — leia aqui primeiro
+
+**Retomado pelo `/projeto`.** O Samuel **pausou tudo da Gallica** (as perguntas
+em aberto da sessão 7, logo abaixo, continuam valendo, intocadas) e pediu para
+baixar tudo de um tópico de um grupo do Telegram do qual ele é membro. Foi o
+primeiro trabalho real do "módulo extra — Telegram" previsto no `CLAUDE.md`.
+**Não foi escrito código no `src/`** — usou-se a ferramenta pronta `tdl`
+(decisão do Samuel) + scripts auxiliares, agora guardados em `scripts/telegram/`.
+
+**Idioma:** o Samuel **não fala inglês** — toda mensagem (inclusive as curtas
+entre ferramentas, e explicação de prompts em inglês do tdl) em português.
+
+### O que está pronto (validado ao vivo, resultado real conferido)
+
+Grupo **"Refúgio Intelectual"** (`chat id 2136545743`, supergrupo com tópicos/fórum).
+`tdl chat ls -o json -f "ID == 2136545743"` lista os ~30 tópicos com seus IDs.
+
+| Tópico | ID | Pasta | Arquivos | Tamanho |
+|---|---|---|---|---|
+| 🇻🇦 Escolástica 🇻🇦 | 42840 | `saidas/telegram/arquivos/` | 542 (536 + 6 em `repetidos/`) | 20,4 GB |
+| 🍷 Obras em Latim 🍷 | 783 | `saidas/telegram/topico_783/arquivos/` | 1.575 (1.573 + 2 em `repetidos/`) | 105,3 GB |
+
+- **Conferido por script**: todo arquivo esperado presente, tamanho em bytes
+  idêntico ao informado pelo Telegram, zero `.tmp` sobrando. Só ficaram de fora
+  as figurinhas (`image/webp`): 6 na Escolástica, 1 no Latim.
+- Nome dos arquivos: `<nº da mensagem>_<nome original>` (template do tdl
+  `{{ .MessageID }}_{{ filenamify .FileName }}`) — nada sobrescreve nada.
+- Listas: `saidas/telegram/topico_42840_lista.csv` (Escolástica, CSV `;`) e
+  `saidas/telegram/topico_783/Obras em Latim - lista.xlsx` (abas Resumo +
+  Arquivos, filtro, link "abrir" para cada mensagem, coluna Observação
+  marcando nomes repetidos). Exports brutos do tdl: `topico_42840_export.json`
+  e `topico_783/topico_783_export.json`. Tudo em `saidas/` (gitignored).
+- **Repetidos — regra do Samuel**: só é "cópia" se o conteúdo for **idêntico
+  por SHA-256**; as cópias comprovadas vão **as duas** para `repetidos/`
+  dentro da pasta do tópico, renomeadas `<nome> - msg <id>.<ext>` para ficarem
+  lado a lado; **nada é apagado** (ele decide depois). Mover só **depois** que
+  o download do tópico terminar (o script usa a presença do arquivo na pasta
+  para saber o que falta — mover antes faz baixar de novo).
+  - Escolástica: 3 pares idênticos movidos (Concepção tomista do Direito
+    Natural IV; 87317.pdf; Rickaby, Moral Philosophy).
+  - Latim: *Lingua Latina per se Illustrata.rar* (2 GB, msgs 23645 e 44857)
+    idêntico → movido. ***Apparatus philosophicus…pdf* (msgs 60824 e 60825):
+    mesmo nome e mesmo tamanho exato, mas NÃO idênticos** — 37 bytes de
+    diferença em 234 MB, só a `CreationDate` interna do PDF (21:53 vs 22:21 de
+    12/03/2025): o mesmo PDF gerado duas vezes. Pela regra, **ficou na pasta
+    principal**; ofereci mover para `repetidos/` — sem resposta.
+- **Lição registrada**: "mesmo nome + mesmo tamanho" NÃO prova duplicata (o
+  Samuel questionou, com razão, e o Apparatus provou). Sempre comparar hash.
+
+### Decisões fechadas
+- **Ferramenta: `tdl` v0.20.4** (github.com/iyear/tdl), em vez de Telethon no
+  `src/` — reaproveita login, lista tópico inteiro, download retomável, sem
+  api_id/api_hash. Instalado em `D:\programas\ferramentas\tdl\tdl.exe` (zip da
+  release oficial, checksum SHA-256 conferido; **não** usei o `install.ps1`
+  remoto, não mexe no PATH).
+- **Login próprio do tdl por QR code** (`tdl login -T qr`, escaneado pelo
+  celular do Samuel). Sessão em `C:\Users\fotog\.tdl\` (fora do git; conta
+  8698251678). Com isso o **Telegram Desktop pode ficar aberto** durante o
+  download. Script: `scripts/telegram/tdl_login_qr.bat`.
+- **Fluxo: primeiro listar (planilha), depois baixar** — o Samuel quer ver a
+  lista antes. Baixar tudo menos figurinhas (inclusive imagens e RAR/ZIP —
+  perguntei "só PDF?", ele escolheu "tudo").
+- **Um tópico = uma pasta** ("não quero misturar os tópicos").
+- `-l 4` (4 arquivos simultâneos): pedido do Samuel; na prática a velocidade
+  ficou parecida (~3–6 MB/s) — o gargalo é a conexão/Telegram, não a concorrência.
+
+### Tentado e descartado (não repetir)
+- **`tdl login -T desktop` (importar sessão do Telegram Desktop)**: funciona,
+  MAS o tdl passa a usar **a mesma chave de sessão** do Desktop — quando o
+  Samuel abriu o Desktop, o download caiu com `rpc error code 400:
+  CONNECTION_LAYER_INVALID`. Trocado pelo login por QR. (Se usar desktop de
+  novo: responder **N** a "logout existing desktop session?", senão o Desktop
+  é deslogado.)
+- **Prompts interativos do tdl não funcionam no shell do Claude** (`Error:
+  Incorrect function`) — abrir um `.bat` numa janela própria
+  (`Start-Process`) para o Samuel interagir. `cmd /k "cd … && tdl.exe …"`
+  via `Start-Process` quebrou nas aspas ("tdl.exe não é reconhecido") — usar
+  `.bat` com caminho absoluto.
+- **`tdl dl -f` com o export feito com `--raw`**: baixa poucos arquivos e
+  termina com código 0 sem erro (bug/limitação do tdl). **Solução**: gerar um
+  JSON "limpo" (só `id,type,file,date`, sem `raw`) com os itens faltantes e
+  passar esse para o `dl -f`. O export com `--raw` continua útil para listar
+  (traz `Media.Document.Size`, `MimeType`, `FileName`).
+- **`--continue`** retomou um estado salvo incompleto (só 4 arquivos);
+  **`--restart` + `--skip-same`** sobre a lista limpa é o que funciona.
+- O tdl às vezes morre com **`fatal error: fault` (0xc0000005) dentro de
+  `encoding/json`** (bug interno, nada a ver com rede/disco) — por isso o
+  download roda **em rodadas** (`baixar_topico.sh`): cada rodada apaga
+  `.tmp`, recalcula o que falta, roda o tdl; para quando completo ou se uma
+  rodada não progredir.
+- **Dois comandos tdl ao mesmo tempo não dá**: "Current database is used by
+  another process" (bolt em `~/.tdl/data`). Para listar outro tópico durante
+  um download é preciso parar o download (matar o processo **bash do script
+  de rodadas primeiro**, senão ele abre nova rodada; `TaskStop` não mata os
+  filhos — conferir com `Get-CimInstance Win32_Process`).
+- **`ps -W` e `tasklist` chamados do Git Bash travaram** (>2 min) — usar
+  PowerShell `Get-CimInstance`/`Get-Process`. E `du -sh` em pasta com 1000+
+  arquivos grandes no HD externo ocupado também travou — usar
+  `Get-ChildItem | Measure-Object` num `Start-Job` com timeout.
+- **Erro meu, registrado para não repetir**: um filtro de limpeza de
+  processos por `CommandLine -match 'topico_783'` pegou o **Excel do Samuel**
+  (que estava com a planilha aberta) — o Excel ficou travado ("não
+  respondendo", 1 thread, impossível de matar; some no reboot). **Matar
+  processo só por PID conferido, nunca por padrão de linha de comando amplo.**
+
+### Comportamento real observado
+- Export de tópico: rápido (548 msgs em 4 s; 1.580 em 44 s).
+- Download: ~3–6 MB/s; Latim (105 GB) levou ~6h15 (18:25 → 00:40). Arquivos
+  `.tmp` grandes aparecem com 0 MB durante o download (tdl escreve por partes
+  fora de ordem) — não é travamento; medir pelo `WriteTransferCount` do processo.
+- Nomes de arquivo **cortados em ~67–70 caracteres** pelo uploader: vários
+  volumes diferentes com o mesmo nome (ex.: 10× `Cursus_theologicus_in_gratiam…pdf`,
+  3× `Francisci_Soares…_Tomo.pdf`) — o número do volume se perdeu. Postados
+  em sequência e sem legenda; o nº da mensagem provavelmente segue a ordem dos
+  volumes, mas **não confirmado**.
+- Arquivos sem extensão (MIME `application/octet-stream`, nomes tipo
+  "…Tomo.2", "…Vol.3"): 24 na Escolástica, quase certamente PDF; no Latim não contados.
+
+### Perguntas em aberto (exatas)
+1. "Quer que eu mova também o par do *Apparatus philosophicus* (msgs 60824 e
+   60825, diferem só na data de criação interna do PDF) para `repetidos/`?"
+2. Pendências oferecidas, sem resposta ainda: (a) colocar `.pdf` nos arquivos
+   sem extensão **depois de conferir a assinatura `%PDF`**; (b) descobrir o
+   volume verdadeiro dos livros de nome cortado lendo a folha de rosto e
+   renomear (~50 na Escolástica, 106 no Latim — coluna "Observação" da planilha).
+3. Outros tópicos do grupo (ex.: 🦉Biblioteca🦉 439, Patrologia 21001, Obras em
+   Francês 4567…) — o Samuel não pediu ainda; se pedir, **listar primeiro**.
+
+**Próximo passo recomendado:** perguntar ao Samuel qual das pendências acima
+fazer (ou voltar às perguntas da Gallica, sessão 7).
+
+**Como rodar (Telegram):**
+```
+# login (só se ~/.tdl sumir): abre janela com QR code
+scripts\telegram\tdl_login_qr.bat
+# listar um tópico (só metadados)
+D:\programas\ferramentas\tdl\tdl.exe chat export -c 2136545743 --topic <ID> --with-content --raw -o <pasta>\topico_<ID>_export.json
+# planilha
+.venv\Scripts\python.exe scripts\telegram\planilha_topico.py <export.json> "<saida.xlsx>" <ID> "<nome do tópico>"
+# baixar em rodadas (Git Bash), uma pasta por tópico
+bash scripts/telegram/baixar_topico.sh <export.json> <pasta_destino> <rodadas.log>
+```
+(`planilha_topico.py` tem o chat id 2136545743 fixo no topo — trocar se for
+outro grupo. `baixar_topico.sh` pula só figurinhas; não deduplica.)
+
+**Testes:** `.venv\Scripts\python.exe -m pytest -q` → **324 passed** (45 s) no
+fechamento desta sessão (06/10). Os scripts do Telegram não têm teste
+automatizado — foram validados pelo uso real descrito acima.
+
+**Ambiente novo nesta sessão:** `tdl` 0.20.4 em `D:\programas\ferramentas\tdl\`
+(fora do repo); sessão em `C:\Users\fotog\.tdl\`. Nada instalado no `.venv`.
+
+## Checkpoint 24/09/2026 (sessão 7) — mapeamento por curadoria FINALIZADO (dedup + categorização + tradução, 26.544/26.544); download em lote ainda bloqueado, com achado novo
 
 **Retomado pelo comando `/projeto`.** Contexto herdado da sessão 6 (checkpoint
 logo abaixo): o mecanismo de download em lote da Gallica (Tarefa C4) tinha
