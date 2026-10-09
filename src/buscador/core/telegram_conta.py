@@ -67,14 +67,16 @@ def criar_cliente(nome_conta: str, caminho_cfg: Path = CAMINHO_PADRAO,
     return TelegramClient(str(sessao), api_id, api_hash)
 
 
-async def login_qr(cliente, mostrar_qr, pedir_senha, espera_por_qr: float = 60,
-                   max_qrs: int = 5) -> None:
+async def login_qr(cliente, mostrar_qr, pedir_senha, espera_por_qr: float | None = None,
+                   max_qrs: int = 10) -> None:
     """Entra na conta pelo QR code.
 
     - mostrar_qr(link): chamada a cada QR novo -- quem chama desenha o QR.
     - pedir_senha(): só é chamada se a conta tiver senha de duas etapas;
       a senha é usada na hora e não é guardada em lugar nenhum.
-    Cada QR vale ~1 minuto; se ninguém escanear, gera outro (até max_qrs).
+    Cada QR vale pouco tempo (o próprio Telegram diz até quando -- por isso
+    espera_por_qr=None: espera até ele vencer de verdade); se ninguém
+    escanear, gera outro, até max_qrs vezes (~5 minutos no total).
     """
     if await cliente.is_user_authorized():
         return  # já está logado nesta conta -- nada a fazer

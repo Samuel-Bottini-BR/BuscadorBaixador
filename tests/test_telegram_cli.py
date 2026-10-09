@@ -27,8 +27,28 @@ def test_nome_de_conta_invalido(tmp_path, monkeypatch, capsys):
     assert "Nome de conta inválido" in capsys.readouterr().out
 
 
-def test_mostrar_qr_salva_imagem(tmp_path, monkeypatch):
-    monkeypatch.setattr(telegram_cli, "ARQUIVO_QR", tmp_path / "qr.png")
-    monkeypatch.setattr(telegram_cli.os, "startfile", lambda p: None, raising=False)
-    telegram_cli.mostrar_qr("tg://login?token=abc")
-    assert (tmp_path / "qr.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+def test_cada_qr_vai_para_um_arquivo_novo(tmp_path, monkeypatch):
+    monkeypatch.setattr(telegram_cli, "PASTA_QR", tmp_path)
+    monkeypatch.setattr(telegram_cli, "_qrs_mostrados", 0)
+    abertos = []
+    monkeypatch.setattr(telegram_cli.os, "startfile", abertos.append, raising=False)
+    telegram_cli.mostrar_qr("tg://login?token=1")
+    telegram_cli.mostrar_qr("tg://login?token=2")
+    assert abertos == [tmp_path / "qr_login_1.png", tmp_path / "qr_login_2.png"]
+    for arquivo in abertos:
+        assert arquivo.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_imagem_que_nao_salva_mostra_qr_no_terminal(tmp_path, monkeypatch, capsys):
+    # imita o Windows recusando gravar (arquivo travado)
+    monkeypatch.setattr(telegram_cli, "PASTA_QR", tmp_path)
+    monkeypatch.setattr(telegram_cli, "_qrs_mostrados", 0)
+
+    class ImagemTravada:
+        def save(self, destino):
+            raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr(telegram_cli.qrcode, "make", lambda link: ImagemTravada())
+    telegram_cli.mostrar_qr("tg://login?token=1")  # não pode quebrar
+    saida = capsys.readouterr().out
+    assert any(c in saida for c in "█▀▄")  # QR desenhado em texto no terminal

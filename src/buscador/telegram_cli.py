@@ -24,22 +24,47 @@ from buscador.core.config_sites import CAMINHO_PADRAO
 from buscador.core.telegram_busca import contar_arquivos
 from buscador.core.telegram_conta import criar_cliente, login_qr
 
-# Onde a imagem do QR é salva (saidas/ não vai pro GitHub).
-ARQUIVO_QR = CAMINHO_PADRAO.parent / "saidas" / "telegram" / "qr_login.png"
+# Pasta onde as imagens do QR são salvas (saidas/ não vai pro GitHub).
+PASTA_QR = CAMINHO_PADRAO.parent / "saidas" / "telegram"
+_qrs_mostrados = 0  # conta quantos QRs já foram mostrados nesta execução
+
+
+def _apagar_qrs_antigos() -> None:
+    """Tenta apagar imagens de QR de vezes anteriores. Se alguma estiver
+    aberta no visualizador de fotos (o Windows trava o arquivo), deixa pra
+    lá -- não é motivo para parar o login."""
+    for antigo in PASTA_QR.glob("qr_login*.png"):
+        try:
+            antigo.unlink()
+        except OSError:
+            pass
 
 
 def mostrar_qr(link: str) -> None:
-    """Desenha o QR numa imagem PNG e abre na tela (no Windows). Também
-    imprime no terminal, caso a imagem não abra."""
-    ARQUIVO_QR.parent.mkdir(parents=True, exist_ok=True)
-    qrcode.make(link).save(ARQUIVO_QR)
+    """Desenha o QR numa imagem PNG e abre na tela (no Windows).
+
+    Cada QR vai para um arquivo NOVO (qr_login_1.png, qr_login_2.png...):
+    o anterior pode estar aberto no visualizador de fotos, e o Windows não
+    deixa gravar por cima de um arquivo aberto (foi o erro "Invalid
+    argument" do primeiro teste). Se mesmo assim não der para salvar a
+    imagem, desenha o QR no próprio terminal."""
+    global _qrs_mostrados
+    _qrs_mostrados += 1
+    PASTA_QR.mkdir(parents=True, exist_ok=True)
+    if _qrs_mostrados == 1:
+        _apagar_qrs_antigos()
+    arquivo = PASTA_QR / f"qr_login_{_qrs_mostrados}.png"
     print()
-    print(f"[{time.strftime('%H:%M:%S')}] QR code novo (vale ~1 minuto): {ARQUIVO_QR}")
+    print(f"[{time.strftime('%H:%M:%S')}] QR code nº {_qrs_mostrados} (se vencer, aparece outro sozinho)")
     print("No celular: Telegram > Configurações > Dispositivos > Conectar dispositivo,")
     print("e aponte a câmera para o QR.")
-    if hasattr(os, "startfile"):  # só existe no Windows
-        os.startfile(ARQUIVO_QR)
-    else:
+    try:
+        qrcode.make(link).save(arquivo)
+        if not hasattr(os, "startfile"):  # startfile só existe no Windows
+            raise OSError("sem visualizador")
+        os.startfile(arquivo)
+        print(f"(imagem: {arquivo})")
+    except OSError:
         qr = qrcode.QRCode(border=1)
         qr.add_data(link)
         qr.print_ascii(invert=True)
