@@ -26,6 +26,7 @@ import qrcode
 
 from buscador.core.acao_humana import TIPO_LOGIN, AcaoHumanaNecessaria, formatar_aviso
 from buscador.core.config_sites import CAMINHO_PADRAO
+from buscador.core.registro_erros import instalar_em_comandos
 from buscador.core.telegram_busca import contar_arquivos, listar_arquivos, montar_lista_tdl
 from buscador.core.telegram_conta import criar_cliente, login_qr
 
@@ -147,6 +148,7 @@ async def cmd_contar(conta: str, chat: int, topico: int) -> None:
 
 
 def main(argv=None) -> int:
+    instalar_em_comandos("telegram_cli")  # erro inesperado também vai para logs/erros.log
     parser = argparse.ArgumentParser(prog="telegram", description="Telegram: login e contagem de arquivos")
     sub = parser.add_subparsers(dest="comando", required=True)
     p_login = sub.add_parser("login", help="entrar numa conta pelo QR code")

@@ -26,3 +26,6 @@ jobs/
 # Login do Telegram (Telethon), um arquivo por conta - vale como senha,
 # nunca commitar
 sessoes_telegram/
+
+# Caderno de erros do app (logs/erros.log) - fica so no PC
+logs/
