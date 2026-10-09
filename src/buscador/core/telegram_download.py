@@ -327,23 +327,67 @@ def iniciar_download(pasta: Path, bash: Path, script: Path = SCRIPT_BAIXAR,
     # O script usa o MESMO Python deste aplicativo (variável PY).
     ambiente = {**os.environ, "PY": _caminho_para_bash(Path(sys.executable)),
                 **(ambiente_extra or {})}
-    opcoes = {}
+    comando = montar_comando(bash, lista, destino, log, script)
     if os.name == "nt":
-        # Sem janela preta e num "grupo" próprio: fechar o app não derruba o download.
-        opcoes["creationflags"] = (subprocess.CREATE_NEW_PROCESS_GROUP
-                                   | subprocess.CREATE_NO_WINDOW)
+        pid = _iniciar_independente_windows(comando, ambiente, pasta)
     else:
-        opcoes["start_new_session"] = True
+        saida = open(pasta / "download_saida.log", "a", encoding="utf-8")
+        processo = subprocess.Popen(
+            comando, stdout=saida, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+            env=ambiente, cwd=str(pasta), start_new_session=True,
+        )
+        saida.close()  # o processo filho tem a cópia dele; a nossa pode fechar
+        _PROCESSOS[processo.pid] = processo
+        pid = processo.pid
+    caminho_pid(pasta).write_text(str(pid), encoding="utf-8")
+    return pid
+
+
+def _iniciar_independente_windows(comando: list[str], ambiente: dict, pasta: Path) -> int:
+    """Inicia o download de um jeito que SOBREVIVE a fechar a janela preta do app.
+
+    Problema real (09/10/2026): o download começou, baixou 54 arquivos e
+    morreu quando o Samuel fechou a janela. O Windows Terminal coloca tudo o
+    que nasce dele numa "caixa" (job) e, ao fechar, mata a caixa inteira.
+
+    Tentativa 1: pedir para o processo SAIR da caixa (CREATE_BREAKAWAY_FROM_JOB).
+    Tentativa 2 (se o Windows não deixar sair): pedir ao próprio Windows
+    (serviço WMI) que crie o processo -- aí ele nasce fora da caixa."""
+    flags = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+             | subprocess.CREATE_BREAKAWAY_FROM_JOB)
     saida = open(pasta / "download_saida.log", "a", encoding="utf-8")
-    processo = subprocess.Popen(
-        montar_comando(bash, lista, destino, log, script),
-        stdout=saida, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-        env=ambiente, cwd=str(pasta), **opcoes,
+    try:
+        processo = subprocess.Popen(
+            comando, stdout=saida, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+            env=ambiente, cwd=str(pasta), creationflags=flags,
+        )
+        saida.close()
+        _PROCESSOS[processo.pid] = processo
+        return processo.pid
+    except OSError:
+        saida.close()
+    # Tentativa 2: WMI. O comando vai num .ps1 (evita confusão de aspas).
+    linha = subprocess.list2cmdline(comando)
+    script = pasta / "download_iniciar.ps1"
+    script.write_text(
+        "$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{\n"
+        f"  CommandLine = @'\n{linha}\n'@\n"
+        f"  CurrentDirectory = @'\n{pasta}\n'@\n"
+        "}\n"
+        "Write-Output $r.ProcessId\n",
+        encoding="utf-8",
     )
-    saida.close()  # o processo filho tem a cópia dele; a nossa pode fechar
-    _PROCESSOS[processo.pid] = processo
-    caminho_pid(pasta).write_text(str(processo.pid), encoding="utf-8")
-    return processo.pid
+    resultado = subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+        capture_output=True, text=True, timeout=60,
+    )
+    try:
+        return int(resultado.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        raise RuntimeError(
+            "Não consegui iniciar o download em segundo plano. "
+            f"Detalhes: {resultado.stderr.strip()[:500]}"
+        ) from None
 
 
 def comando_planilha(lista: Path, saida: Path, chat_id: int, topico_id: int | None,
