@@ -19,6 +19,7 @@ dependencies = [
     "win11toast>=0.35",
     "telethon>=1.45",
     "qrcode[pil]>=8.0",
+    "streamlit>=1.40",
 ]
 
 [project.optional-dependencies]
