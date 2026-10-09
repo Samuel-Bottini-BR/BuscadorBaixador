@@ -58,6 +58,14 @@ um comando por vez.
 faltando**; 4 a mais (vídeos .mp4 enviados "como arquivo"). Formato igual ao do
 tdl → serve direto para `planilha_topico.py` e `baixar_topico.sh`.
 
+**Achado: relógio do PC atrasado trava o `tdl` (09/10, 16h35).** O download da
+lista nova não começou: `~/.tdl/log/latest.log` mostrava `bad message id ...
+created too far in future` + `retry limit reached` em loop. O relógio do PC
+estava ~47 s atrasado (o gotd/tdl rejeita mensagens >30 s "no futuro"; o
+Telethon corrige sozinho, por isso contar/listar funcionaram). Correção:
+PowerShell admin `net start w32time` + `w32tm /resync /force` (ou Configurações
+→ Data e hora → Sincronizar agora). Não era a lista nem dois tdl abertos.
+
 ### Próximo passo
 1. ~~Teste da fatia 1 no PC~~ (feito, acima). Como foi: `git fetch` + `git checkout
    claude/intelligent-knuth-cuwrq9`; criar api_id/api_hash em my.telegram.org e
