@@ -144,3 +144,35 @@ def test_formato_do_tdl_sem_figurinhas_e_em_ordem():
                    "Attributes": [{"FileName": "Summa.pdf"}]}
     sem_nome = lista["messages"][0]
     assert sem_nome["file"] == "920.epub"  # "<id do documento>.<extensão>", como o tdl
+
+
+# --- conversa sem tópicos / outros tipos de conversa -----------------------------
+
+def test_conversa_sem_topico_nao_manda_top_msg_id():
+    cliente = ClienteBusca()
+    asyncio.run(contar_arquivos(cliente, 2136545743, None))
+    mensagens = asyncio.run(listar_arquivos(cliente, 2136545743, None))
+    assert len(mensagens) == 250
+    assert all(p.top_msg_id is None for p in cliente.pedidos)
+
+
+def test_pedido_sem_topico_vira_bytes_sem_o_campo():
+    """top_msg_id é opcional no Telegram: com None, o campo nem é enviado
+    (o pedido fica 4 bytes menor que com um número de tópico)."""
+    from telethon.tl.types import InputPeerEmpty
+    sem = GetSearchCountersRequest(peer=InputPeerEmpty(), filters=[], top_msg_id=None)
+    com = GetSearchCountersRequest(peer=InputPeerEmpty(), filters=[], top_msg_id=81988)
+    assert len(bytes(com)) - len(bytes(sem)) == 4
+
+
+def test_grupo_pequeno_usa_peer_chat():
+    from telethon.tl.types import PeerChat
+
+    class ClienteChat(ClienteFalso):
+        async def get_input_entity(self, peer):
+            assert isinstance(peer, PeerChat)
+            return f"chat-{peer.chat_id}"
+
+    cliente = ClienteChat()
+    asyncio.run(contar_arquivos(cliente, 55, None, tipo="grupo"))
+    assert cliente.pedidos[0].peer == "chat-55"

@@ -27,6 +27,8 @@ from telethon.tl.types import (
     InputMessagesFilterVideo,
     InputMessagesFilterVoice,
     PeerChannel,
+    PeerChat,
+    PeerUser,
 )
 
 # Cada filtro do Telegram e o nome em português que mostramos ao Samuel.
@@ -51,21 +53,36 @@ def traduzir_contadores(contadores) -> dict[str, int]:
     return resultado
 
 
-async def achar_grupo(cliente, chat_id: int):
+# Que tipo de conversa é o número guardado. O Telegram usa uma "etiqueta"
+# diferente para cada tipo (o mesmo número pode existir como canal e como
+# pessoa), então precisamos dizer qual é:
+# - "canal": supergrupos (inclusive com tópicos) e canais -- o caso comum;
+# - "grupo": grupo pequeno antigo (o Telegram chama de "chat básico");
+# - "usuario": conversa com uma pessoa ou robô.
+PEERS = {"canal": PeerChannel, "grupo": PeerChat, "usuario": PeerUser}
+
+
+async def achar_grupo(cliente, chat_id: int, tipo: str = "canal"):
     """Acha o grupo pelo número (ex.: 2136545743). Numa conta recém-logada
     o Telethon ainda não "conhece" o grupo; nesse caso carrega a lista de
     conversas da conta uma vez e tenta de novo."""
+    peer = PEERS[tipo](chat_id)
     try:
-        return await cliente.get_input_entity(PeerChannel(chat_id))
+        return await cliente.get_input_entity(peer)
     except ValueError:
         await cliente.get_dialogs()
-        return await cliente.get_input_entity(PeerChannel(chat_id))
+        return await cliente.get_input_entity(peer)
 
 
-async def contar_arquivos(cliente, chat_id: int, topico_id: int) -> dict[str, int]:
+async def contar_arquivos(cliente, chat_id: int, topico_id: int | None,
+                          tipo: str = "canal") -> dict[str, int]:
     """Uma única pergunta ao servidor: quantos arquivos de cada tipo tem no
-    tópico. top_msg_id = o número do tópico (fórum)."""
-    grupo = await achar_grupo(cliente, chat_id)
+    tópico. top_msg_id = o número do tópico (fórum).
+
+    topico_id=None: grupo/conversa SEM tópicos -- conta a conversa inteira.
+    (Mandar top_msg_id=None faz o Telethon simplesmente não enviar esse
+    campo, que é opcional no Telegram.)"""
+    grupo = await achar_grupo(cliente, chat_id, tipo)
     contadores = await cliente(GetSearchCountersRequest(
         peer=grupo,
         filters=[filtro() for filtro in FILTROS],
@@ -78,17 +95,19 @@ async def contar_arquivos(cliente, chat_id: int, topico_id: int) -> dict[str, in
 MIMES_FIGURINHA = {"image/webp", "application/x-tgsticker", "video/webm"}
 
 
-async def listar_arquivos(cliente, chat_id: int, topico_id: int,
+async def listar_arquivos(cliente, chat_id: int, topico_id: int | None,
                           filtro=InputMessagesFilterDocument, por_pagina: int = 100,
-                          ao_receber_pagina=None):
+                          ao_receber_pagina=None, tipo: str = "canal"):
     """Busca no servidor SÓ as mensagens com arquivo do tópico, de 100 em
     100, da mais nova para a mais antiga. Devolve a lista de mensagens.
 
     Paginação: cada pedido diz "me dá as próximas, antes da mensagem nº X"
     (offset_id = a última que já veio). Para quando vier uma página vazia.
     ao_receber_pagina(n_pagina, total_ate_agora) serve só pra mostrar progresso.
-    Se o Telegram mandar esperar (FLOOD_WAIT), o Telethon espera sozinho."""
-    grupo = await achar_grupo(cliente, chat_id)
+    Se o Telegram mandar esperar (FLOOD_WAIT), o Telethon espera sozinho.
+    topico_id=None: grupo/conversa sem tópicos (busca na conversa inteira).
+    tipo: "canal", "grupo" ou "usuario" (ver PEERS acima)."""
+    grupo = await achar_grupo(cliente, chat_id, tipo)
     mensagens = []
     offset_id = 0
     pagina = 0

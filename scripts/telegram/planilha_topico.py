@@ -1,6 +1,7 @@
 """Gera planilha .xlsx (Resumo + Arquivos) a partir do export do tdl de um tópico.
 
-Uso: python planilha_topico.py <export.json> <saida.xlsx> <id_topico> "<nome do tópico>"
+Uso: python planilha_topico.py <export.json> <saida.xlsx> <id_topico> "<nome do tópico>" [chat] ["<nome do grupo>"]
+id_topico 0 = grupo/conversa sem tópicos. Sem [chat], usa o Refúgio Intelectual.
 """
 import json
 import os
@@ -60,7 +61,7 @@ def extensao(nome):
     return ext if ext and ext.isalnum() and not ext.isdigit() and len(ext) <= 5 and " " not in ext else ""
 
 
-def main(export, saida, topico, nome_topico):
+def main(export, saida, topico, nome_topico, chat=CHAT, nome_grupo="Refúgio Intelectual"):
     dados = json.load(open(export, encoding="utf-8"))
     linhas = []
     for m in dados["messages"]:
@@ -77,7 +78,8 @@ def main(export, saida, topico, nome_topico):
             "mb": round(tam / 1024**2, 2),
             "bytes": tam,
             "legenda": (raw.get("Message") or "").replace("\n", " ").strip()[:500],
-            "link": f"https://t.me/c/{CHAT}/{topico}/{m['id']}",
+            "link": (f"https://t.me/c/{chat}/{topico}/{m['id']}" if topico
+                     else f"https://t.me/c/{chat}/{m['id']}"),
         })
     linhas.sort(key=lambda r: r["id"])
 
@@ -100,7 +102,8 @@ def main(export, saida, topico, nome_topico):
     ws = wb.active
     ws.title = "Resumo"
     total = sum(r["bytes"] for r in linhas)
-    ws.append([f"Tópico: {nome_topico} (grupo Refúgio Intelectual, tópico {topico})"])
+    ws.append([f"Tópico: {nome_topico} (grupo {nome_grupo}, tópico {topico})" if topico
+               else f"Conversa: {nome_grupo}"])
     ws["A1"].font = Font(bold=True, size=13)
     ws.append([f"Lista gerada em {datetime.now():%d/%m/%Y %H:%M} — nada foi baixado ainda"])
     ws.append([])
@@ -157,9 +160,15 @@ def main(export, saida, topico, nome_topico):
     print("Maiores:")
     for r in sorted(linhas, key=lambda r: -r["bytes"])[:5]:
         print(f"  {r['mb']:8.1f} MB  {r['arquivo']}")
-    print(f"Espaço livre no D: {shutil.disk_usage('D:/').free / 1024**3:.0f} GB")
+    livre = shutil.disk_usage(os.path.dirname(os.path.abspath(saida))).free
+    print(f"Espaço livre no disco da planilha: {livre / 1024**3:.0f} GB")
     print(f"Planilha: {saida}")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4])
+    extras = {}
+    if len(sys.argv) > 5:
+        extras["chat"] = int(sys.argv[5])
+    if len(sys.argv) > 6:
+        extras["nome_grupo"] = sys.argv[6]
+    main(sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4], **extras)

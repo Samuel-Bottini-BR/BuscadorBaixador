@@ -4,8 +4,11 @@
 # Pula só figurinhas. Repetidos são baixados e comparados depois (por hash).
 # Com "so_pdf" no 4º argumento, baixa só PDF (MIME application/pdf ou nome .pdf).
 EXPORT="$1"; DEST="$2"; LOG="$3"; FILTRO="${4:-}"
-PY=/d/programas/BuscadorBaixador/.venv/Scripts/python.exe
-TDL=/d/programas/ferramentas/tdl/tdl.exe
+# PY e TDL podem vir de fora (o aplicativo passa o Python dele em PY).
+PY="${PY:-/d/programas/BuscadorBaixador/.venv/Scripts/python.exe}"
+TDL="${TDL:-/d/programas/ferramentas/tdl/tdl.exe}"
+# cygpath (do Git Bash) converte /d/x em D:/x para o tdl; fora do Windows, não precisa.
+caminho() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
 LISTA="${EXPORT%.json}_faltando.json"
 mkdir -p "$DEST"
 
@@ -14,11 +17,18 @@ conta() { ls "$DEST" | grep -vc '\.tmp$'; }
 for rodada in $(seq 1 20); do
   rm -f "$DEST"/*.tmp
   falta=$(EXPORT="$EXPORT" DEST="$DEST" LISTA="$LISTA" FILTRO="$FILTRO" "$PY" - <<'EOF'
-import json, os
+import json, os, re
 exp, dest, lista = os.environ["EXPORT"], os.environ["DEST"], os.environ["LISTA"]
 so_pdf = os.environ["FILTRO"] == "so_pdf"
 d = json.load(open(exp, encoding="utf-8"))
-have = {int(n.split("_", 1)[0]) for n in os.listdir(dest) if not n.endswith(".tmp")}
+# Já baixados: "<id>_<nome>" na pasta, ou "<nome> - msg <id>.<ext>" em repetidos/
+have = set()
+for raiz in (dest, os.path.join(dest, "repetidos")):
+    if os.path.isdir(raiz):
+        for n in os.listdir(raiz):
+            achou = re.match(r"(\d+)_", n) or re.search(r" - msg (\d+)(\.[^.\s]*)?$", n)
+            if achou and not n.endswith(".tmp"):
+                have.add(int(achou.group(1)))
 falt = []
 for m in sorted(d["messages"], key=lambda m: m["id"]):
     doc = (m["raw"].get("Media") or {}).get("Document") or {}
@@ -37,7 +47,7 @@ EOF
   antes=$(conta)
   echo "$(date +%H:%M) rodada $rodada: baixados=$antes faltando=$falta" >> "$LOG"
   [ "$falta" = "0" ] && { echo "COMPLETO" >> "$LOG"; exit 0; }
-  "$TDL" dl -f "$(cygpath -m "$LISTA")" -d "$(cygpath -m "$DEST")" \
+  "$TDL" dl -f "$(caminho "$LISTA")" -d "$(caminho "$DEST")" \
     --template "{{ .MessageID }}_{{ filenamify .FileName }}" \
     --skip-same --restart --disable-progress-ps -l 4 > "${LOG%.log}_rodada$rodada.log" 2>&1
   cod=$?
