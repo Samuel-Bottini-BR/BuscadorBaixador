@@ -39,8 +39,20 @@ seguir sem pedir confirmação a cada arquivo. Branch novo:
   Listar → Escolher → Baixar), Catalogar (em breve).
 - `CLAUDE.md`: nota de que o Telegram foi adiantado (fases 1–5 inalteradas).
 
+### Fatia 1 VALIDADA no PC (09/10, ~16h20)
+`telegram.bat login --conta samuel` → "conectada como Samuel Bottini" (QR
+escaneado). `telegram.bat contar --conta samuel --chat 2136545743 --topico 81988`
+→ **0,3 s** (antes: ~1h44 com o tdl): 437 documentos, 733 fotos, 135 vídeos,
+62 músicas, 142 áudios. Conferido contra o export antigo do tdl
+(`topico_81988_export_completo.json`): **fotos 733 = 733 exato**; documentos 437 ≈
+353 PDF + 68 EPUB + 3 DOCX + 3 ZIP + 2 TXT + 1 RAR + 1 torrent + 1 sem tipo (=432;
+os ~5 a mais devem ser imagens enviadas "como arquivo"). Problemas do 1º teste,
+já corrigidos: QR gravado por cima do arquivo aberto no visualizador (OSError 22)
+→ agora um PNG por QR; no PowerShell é `cd` sem `/d` e `.\telegram.bat`; colar
+um comando por vez.
+
 ### Próximo passo
-1. **Teste da fatia 1 no PC** (falta): `git fetch` + `git checkout
+1. ~~Teste da fatia 1 no PC~~ (feito, acima). Como foi: `git fetch` + `git checkout
    claude/intelligent-knuth-cuwrq9`; criar api_id/api_hash em my.telegram.org e
    colar em `buscador.local.cfg` `[telegram]`; `telegram.bat login --conta samuel`;
    `telegram.bat contar --conta samuel --chat 2136545743 --topico 81988` → esperar
