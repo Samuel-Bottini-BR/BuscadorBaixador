@@ -66,6 +66,24 @@ Telethon corrige sozinho, por isso contar/listar funcionaram). Correção:
 PowerShell admin `net start w32time` + `w32tm /resync /force` (ou Configurações
 → Data e hora → Sincronizar agora). Não era a lista nem dois tdl abertos.
 
+### App com tela (Streamlit) — feito no fim da sessão 9
+**Abrir: dois cliques em `app.bat`** (faz `git pull --ff-only`, `pip install -e .`
+e abre no navegador; logs em `logs/atualizacao.log`, `instalacao.log`,
+`streamlit.log`). Código em `src/buscador/app/` (`principal.py` + `pagina_*.py`).
+- **Caderno de erros:** `logs/erros.log` (gitignored) — erros das telas
+  (`principal.com_registro_de_erros`), do `telegram_cli` e de downloads parados
+  (rodadas.log + `~/.tdl/log/latest.log`). **O Claude lê esse arquivo pelo WebDAV
+  e corrige** — pedido do Samuel: nada de copiar erro à mão.
+- **Telegram:** contas (QR na tela), grupos (`saidas/telegram/grupos.json`),
+  tópicos, Listar → Escolher (caixinhas) → Baixar (baixar_topico.sh em segundo
+  plano, `download.pid`), confere/acerta o relógio antes (`core/relogio.py`).
+- **Sites:** cadastro em `saidas/sites_cadastrados.json`; "+ Adicionar site"
+  verifica robots.txt/API de verdade (`core/verificar_site.py`).
+- **Mapear:** roda `buscador.cli` em segundo plano (`core/mapear_segundo_plano.py`).
+- **Início/Baixar/Catalogar:** números reais / estado honesto / "em breve".
+- Falta testar no PC: login QR na tela, grupos reais, download pelo app,
+  acertar relógio (UAC), mapeamento real (proxy da nuvem bloqueia os sites).
+
 ### Próximo passo
 1. ~~Teste da fatia 1 no PC~~ (feito, acima). Como foi: `git fetch` + `git checkout
    claude/intelligent-knuth-cuwrq9`; criar api_id/api_hash em my.telegram.org e

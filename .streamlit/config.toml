@@ -1,0 +1,10 @@
+# Configuração do aplicativo (Streamlit). Lida quando o app é aberto pelo app.bat.
+[client]
+toolbarMode = "minimal"   # esconde o botão "Deploy" (o app é só local)
+
+[browser]
+gatherUsageStats = false  # não manda estatística de uso para ninguém
+
+[theme]
+primaryColor = "#245a47"  # verde do rascunho visual
+base = "light"

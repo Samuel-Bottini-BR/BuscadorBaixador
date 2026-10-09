@@ -58,7 +58,7 @@ with st.sidebar:
     st.caption("Se algo der errado, fica anotado em logs\\erros.log.")
 
 menu = st.navigation([
-    st.Page(com_registro_de_erros("Início", pagina_inicio.mostrar), title="Início", icon="🏠", url_path="inicio", default=True),
+    st.Page(com_registro_de_erros("Início", pagina_inicio.mostrar), title="Início", icon="🏠", default=True),
     st.Page(com_registro_de_erros("Sites", pagina_sites.mostrar), title="Sites", icon="🌐", url_path="sites"),
     st.Page(com_registro_de_erros("Mapear", pagina_mapear.mostrar), title="Mapear", icon="🗺️", url_path="mapear"),
     st.Page(com_registro_de_erros("Baixar", pagina_baixar.mostrar), title="Baixar", icon="⬇️", url_path="baixar"),
