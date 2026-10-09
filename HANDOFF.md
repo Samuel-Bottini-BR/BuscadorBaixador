@@ -51,6 +51,13 @@ já corrigidos: QR gravado por cima do arquivo aberto no visualizador (OSError 2
 → agora um PNG por QR; no PowerShell é `cd` sem `/d` e `.\telegram.bat`; colar
 um comando por vez.
 
+### Fatia 2 VALIDADA no PC (09/10, ~16h30)
+`telegram.bat listar --conta samuel --chat 2136545743 --topico 81988` gravou
+`saidas/telegram/topico_81988/topico_81988_lista_busca.json`: **437 documentos,
+9,44 GB, 353 PDFs**. Comparado com o export antigo do tdl: **nenhum documento
+faltando**; 4 a mais (vídeos .mp4 enviados "como arquivo"). Formato igual ao do
+tdl → serve direto para `planilha_topico.py` e `baixar_topico.sh`.
+
 ### Próximo passo
 1. ~~Teste da fatia 1 no PC~~ (feito, acima). Como foi: `git fetch` + `git checkout
    claude/intelligent-knuth-cuwrq9`; criar api_id/api_hash em my.telegram.org e
