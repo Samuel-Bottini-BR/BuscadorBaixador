@@ -1,5 +1,58 @@
 # Buscador e Baixador — estado atual
 
+## Checkpoint 09/10/2026 (sessão 9, nuvem) — Telegram: lista pela busca do servidor (fatia 1: login QR + contar) + rascunho visual do app — leia aqui primeiro
+
+**Sessão feita na nuvem (claude.ai/code)**, com acesso ao HD `D:` do Samuel por
+WebDAV (`claude-hd.tail920a48.ts.net`, leitura e escrita). O Samuel autorizou
+seguir sem pedir confirmação a cada arquivo. Branch novo:
+**`claude/intelligent-knuth-cuwrq9`** (contém todo o `feat/gallica-cruzamento-download`
++ o trabalho desta sessão).
+
+### Feito
+- **Apparatus philosophicus** (msgs 60824/60825): movidos para
+  `saidas/telegram/topico_783/arquivos/repetidos/` como `<nome> - msg <id>.pdf`
+  (pergunta 1 da sessão 8 respondida: sim).
+- Pendências da sessão 8: arquivos sem extensão → **não mexer** (podem ser EPUB
+  etc.; baixar tudo, não só PDF); volumes de nome cortado → agora não; outros
+  tópicos → sempre listar antes.
+- **Diagnóstico da lentidão do tdl** (pesquisa + logs reais): o `tdl chat export
+  --topic` lê TODAS as mensagens (`messages.getReplies`, 100 por vez) e filtra no
+  PC; o Telegram impõe ~25 s de FLOOD_WAIT por página → tópico CHAT (81988) levou
+  ~1h44 (≈24 mil msgs lidas para 1.871 com arquivo, 353 PDFs). O download em si
+  (~4,7 MB/s) parece teto da conta não-Premium (`FLOOD_PREMIUM_WAIT`); o Samuel
+  disse para não mexer nisso.
+- **Decisão (Opção 2):** script próprio (Telethon) só para LISTAR, pela busca do
+  servidor (`messages.getSearchCounters` / `messages.search` com filtro e
+  `top_msg_id`); o `tdl` continua BAIXANDO. Cuidado: `iter_messages(reply_to=,
+  filter=)` do Telethon NÃO usa a busca do servidor — chamar a request direto.
+- **Fatia 1 pronta (código + 20 testes sem internet):**
+  `core/telegram_conta.py` (api_id/api_hash do `buscador.local.cfg` seção
+  `[telegram]`; uma sessão por conta em `sessoes_telegram/<conta>.session`,
+  gitignored; `login_qr` só entrega o link — quem desenha o QR é o chamador, para
+  o dashboard poder desenhar dentro do app), `core/telegram_busca.py`
+  (`contar_arquivos`), `telegram_cli.py` + `telegram.bat` (`login`, `contar`).
+  Deps novas: `telethon`, `qrcode[pil]`.
+- **Rascunho visual do app** (só desenho, Streamlit depois):
+  https://claude.ai/artifact/KQvdwQvqabF94Dt3RPk1hx — telas Início, Sites (com
+  "Adicionar site" + verificação de robots/API), Mapear, Baixar, Telegram (contas
+  com QR dentro do app, adicionar grupo/conversa, tópicos com contagem rápida,
+  Listar → Escolher → Baixar), Catalogar (em breve).
+- `CLAUDE.md`: nota de que o Telegram foi adiantado (fases 1–5 inalteradas).
+
+### Próximo passo
+1. **Teste da fatia 1 no PC** (falta): `git fetch` + `git checkout
+   claude/intelligent-knuth-cuwrq9`; criar api_id/api_hash em my.telegram.org e
+   colar em `buscador.local.cfg` `[telegram]`; `telegram.bat login --conta samuel`;
+   `telegram.bat contar --conta samuel --chat 2136545743 --topico 81988` → esperar
+   documentos perto de 353 PDFs + outros.
+2. Fatia 2: listar por `messages.search` (filtro Document) e gerar o JSON no
+   formato do `tdl dl -f`. Fatia 3: planilha + `baixar_topico.sh` usando essa
+   lista. Fatia 4 (opcional): só arquivos novos (`min_id`).
+3. Depois: transformar o rascunho em Streamlit.
+
+**Testes:** no Linux da nuvem, 276 passando (os 3 arquivos `test_jobs_*` só rodam
+no Windows — rodar no PC).
+
 ## Checkpoint 05-06/10/2026 (sessão 8) — Módulo Telegram, 1º uso real: 2 tópicos baixados por inteiro (2.117 arquivos, 125,7 GB) com `tdl` — leia aqui primeiro
 
 **Retomado pelo `/projeto`.** O Samuel **pausou tudo da Gallica** (as perguntas
