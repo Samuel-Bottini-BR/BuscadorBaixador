@@ -225,6 +225,13 @@ reusa as Fases 1–4 no que achar.
 Procurar/baixar obras em grupos de Telegram (tecnologia diferente dos sites);
 entra depois que o núcleo estiver pronto.
 
+**Nota 09/10/2026 — adiantado a pedido do Samuel.** O Telegram começou antes
+do núcleo ficar pronto: na sessão 8, download com o `tdl`; na sessão 9, a lista
+de arquivos de um tópico passou a ser feita pela busca do próprio servidor do
+Telegram (Telethon), e o `tdl` continua baixando. O dashboard tem por enquanto
+só um **rascunho visual**; a tela de verdade continua para o final. As fases
+1–5 não mudaram.
+
 ---
 
 ## 11. Contexto e histórico (o que já foi feito — importante)

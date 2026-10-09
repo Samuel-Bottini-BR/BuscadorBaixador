@@ -22,3 +22,7 @@ sessoes_navegador/
 
 # Registro e logs do motor de jobs (estado local, nao pertence ao repositorio)
 jobs/
+
+# Login do Telegram (Telethon), um arquivo por conta - vale como senha,
+# nunca commitar
+sessoes_telegram/

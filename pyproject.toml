@@ -17,6 +17,8 @@ dependencies = [
     "browser-cookie3>=0.19",
     "seleniumbase>=4.32",
     "win11toast>=0.35",
+    "telethon>=1.45",
+    "qrcode[pil]>=8.0",
 ]
 
 [project.optional-dependencies]

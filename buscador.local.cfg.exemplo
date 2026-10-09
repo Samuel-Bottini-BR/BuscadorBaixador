@@ -2,3 +2,8 @@
 # buscador.local.cfg nunca vai pro git (esta no .gitignore).
 [ddb]
 chave_api = sua-chave-aqui
+
+# Telegram: crie em https://my.telegram.org -> "API development tools"
+[telegram]
+api_id = 1234567
+api_hash = cole-o-api-hash-aqui
