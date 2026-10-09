@@ -27,7 +27,11 @@ from buscador.app import (
 
 from buscador.core.registro_erros import ARQUIVO_ERROS, registrar_erro
 
-st.set_page_config(page_title="Buscador e Baixador", page_icon="📚", layout="wide")
+# Ícone do livrinho (assets/livro.png, desenhado por scripts/gerar_icone.py);
+# se o arquivo não existir por algum motivo, usa o emoji.
+ICONE = ARQUIVO_ERROS.parent.parent / "assets" / "livro.png"
+st.set_page_config(page_title="Buscador e Baixador",
+                   page_icon=str(ICONE) if ICONE.exists() else "📚", layout="wide")
 
 
 def com_registro_de_erros(nome_tela, mostrar):
