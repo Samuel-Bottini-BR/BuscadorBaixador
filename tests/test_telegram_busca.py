@@ -66,3 +66,81 @@ def test_conta_nova_carrega_conversas_para_achar_o_grupo():
     cliente = ClienteFalso(conhece_grupo=False)
     asyncio.run(contar_arquivos(cliente, 2136545743, 81988))
     assert cliente.carregou_conversas
+
+
+# --- listar (fatia 2) ----------------------------------------------------
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+from telethon.tl.functions.messages import SearchRequest
+from telethon.tl.types import (
+    Document,
+    DocumentAttributeFilename,
+    DocumentAttributeSticker,
+    InputStickerSetEmpty,
+    MessageMediaDocument,
+)
+
+from buscador.core.telegram_busca import listar_arquivos, montar_lista_tdl
+
+
+def msg_doc(id_, nome=None, mime="application/pdf", tamanho=1000, figurinha=False):
+    atributos = []
+    if nome:
+        atributos.append(DocumentAttributeFilename(nome))
+    if figurinha:
+        atributos.append(DocumentAttributeSticker(alt="", stickerset=InputStickerSetEmpty()))
+    doc = Document(id=900 + id_, access_hash=0, file_reference=b"", date=None,
+                   mime_type=mime, size=tamanho, dc_id=1, attributes=atributos)
+    return SimpleNamespace(id=id_, media=MessageMediaDocument(document=doc),
+                           message=f"legenda {id_}",
+                           date=datetime(2025, 3, 12, tzinfo=timezone.utc))
+
+
+class ClienteBusca(ClienteFalso):
+    """Servidor de mentira com 250 mensagens com arquivo (ids 1..250),
+    devolvidas da mais nova para a mais antiga, respeitando offset_id."""
+
+    def __init__(self):
+        super().__init__()
+        self.todas = [msg_doc(i, f"livro_{i}.pdf") for i in range(250, 0, -1)]
+
+    async def __call__(self, pedido):
+        self.pedidos.append(pedido)
+        if isinstance(pedido, SearchRequest):
+            antes = [m for m in self.todas if not pedido.offset_id or m.id < pedido.offset_id]
+            return SimpleNamespace(messages=antes[: pedido.limit])
+        return await super().__call__(pedido)
+
+
+def test_lista_todas_as_paginas_com_topico():
+    cliente = ClienteBusca()
+    paginas = []
+    mensagens = asyncio.run(listar_arquivos(
+        cliente, 2136545743, 81988, ao_receber_pagina=lambda p, n: paginas.append((p, n))))
+    assert len(mensagens) == 250
+    assert paginas == [(1, 100), (2, 200), (3, 250)]
+    buscas = [p for p in cliente.pedidos if isinstance(p, SearchRequest)]
+    assert [b.offset_id for b in buscas] == [0, 151, 51, 1]  # 4º pedido volta vazio
+    assert all(b.top_msg_id == 81988 for b in buscas)
+    assert all(isinstance(b.filter, InputMessagesFilterDocument) for b in buscas)
+
+
+def test_formato_do_tdl_sem_figurinhas_e_em_ordem():
+    mensagens = [
+        msg_doc(30, "Summa.pdf", tamanho=5000),
+        msg_doc(20, None, mime="application/epub+zip"),
+        msg_doc(10, "x.webp", mime="image/webp", figurinha=True),
+    ]
+    lista = montar_lista_tdl(2136545743, mensagens)
+    assert lista["id"] == 2136545743
+    assert [m["id"] for m in lista["messages"]] == [20, 30]
+    summa = lista["messages"][1]
+    assert summa["type"] == "message"
+    assert summa["file"] == "Summa.pdf"
+    assert summa["date"] == int(datetime(2025, 3, 12, tzinfo=timezone.utc).timestamp())
+    doc = summa["raw"]["Media"]["Document"]
+    assert doc == {"MimeType": "application/pdf", "Size": 5000,
+                   "Attributes": [{"FileName": "Summa.pdf"}]}
+    sem_nome = lista["messages"][0]
+    assert sem_nome["file"] == "920.epub"  # "<id do documento>.<extensão>", como o tdl
