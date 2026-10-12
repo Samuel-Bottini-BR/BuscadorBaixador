@@ -1,5 +1,38 @@
 # Buscador e Baixador — estado atual
 
+## Checkpoint 12/10/2026 (sessão 9, parte 2, nuvem) — app no ar, Telegram baixando pelo app, catalogador planejado — leia aqui primeiro
+
+**Feito na nuvem (claude.ai/code) com acesso ao HD `D:` por WebDAV.** Branch:
+**`claude/intelligent-knuth-cuwrq9`** (contém tudo do `feat/gallica-cruzamento-download`).
+O `/checkpoint` pessoal (em `C:\Users\fotog\.claude\commands\`) não existe na nuvem; este
+checkpoint foi feito à mão.
+
+### Estado
+- **App (Streamlit)**: atalho **"Buscador e Baixador"** (livrinho) na Área de Trabalho →
+  `app.bat` (faz `git pull --ff-only`) → `scripts\iniciar_app.bat` (pip, cria o atalho, responde
+  em branco a pergunta de e-mail do Streamlit via `%USERPROFILE%\.streamlit\credentials.toml`,
+  roda headless e abre o navegador em `localhost:8501`). **Não fechar a janela preta** enquanto
+  usa (ela é o servidor). Telas: Início, Sites, Mapear, Baixar, Telegram, Catalogar (em breve).
+- **Erros**: `logs\erros.log` (telas, telegram_cli, downloads parados com o fim do
+  `~\.tdl\log\latest.log`) + `logs\atualizacao.log`, `instalacao.log`, `streamlit.log`,
+  `atalho.log`. O Claude lê pelo HD e corrige. Funcionou: registrou sozinho a falha do relógio.
+- **Telegram**: listar/contar pela busca do servidor (Telethon) em segundos; **download pelo app
+  funcionando** (Samuel confirmou em 12/10). Correção: o download nasce fora da "caixa" da
+  janela (`CREATE_BREAKAWAY_FROM_JOB`, senão WMI) e continua se a janela for fechada (antes
+  morreu com 54 arquivos). Antes de baixar o app confere o relógio (`core/relogio.py`; o tdl
+  quebra com >30 s de diferença) e acerta via w32tm/UAC.
+- Testes na nuvem: 400 passando (os 3 `test_jobs_*` só rodam no Windows).
+
+### Próximo passo: Catalogador (Fase 4)
+Tudo o que foi decidido está em **`docs/plano_catalogador.md`** (motor com várias pistas +
+gabarito, listas, Não adquirido → adquirido automático, mesa de conferência no estilo do
+`Conferencia.html`, CDU, `SOBRENOME, Nome`, `AUTOR - Título (Ano) - SB-0001.pdf`, pastas
+Tema\Autor, SB ao confirmar, sha256 original, IA local em vista) e o resumo dos 4 projetos
+anteriores (RenomeadorLivros, biblioteca digital conferencia, Biblioteca Digital, projeto São
+Bento). **Nenhum código do catalogador foi escrito.** Pergunta pendente: começar pelas fatias
+1 (motor) + 3 (mesa) juntas? (recomendado). Lembrar a regra do CLAUDE.md: plan mode no início
+da fase.
+
 ## Checkpoint 09/10/2026 (sessão 9, nuvem) — Telegram: lista pela busca do servidor (fatia 1: login QR + contar) + rascunho visual do app — leia aqui primeiro
 
 **Sessão feita na nuvem (claude.ai/code)**, com acesso ao HD `D:` do Samuel por
